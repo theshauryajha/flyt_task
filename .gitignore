@@ -1,0 +1,17 @@
+# Ignore build and development files
+build/
+devel/
+
+# Ignore Python cache files
+*.pyc
+__pycache__/
+
+# Ignore log files
+*.log
+
+# Ignore ROS bag files
+*.bag
+
+# Ignore temporary files
+*.swp
+*.tmp
