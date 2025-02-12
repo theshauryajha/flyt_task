@@ -2,15 +2,19 @@
 
 import rospy
 from turtlesim.msg import Pose
-from turtlesim.srv import Spawn
+from turtlesim.srv import Spawn, Kill
 import random
 import math
 
 class Turtle:
     def __init__(self):
         rospy.init_node("turtle", anonymous=True)
+
+        rospy.wait_for_service('kill')
         rospy.wait_for_service('spawn')
-        self.spawm_service = rospy.ServiceProxy('spawn', Spawn)
+
+        self.kill_service = rospy.ServiceProxy('kill', Kill)
+        self.spawn_service = rospy.ServiceProxy('spawn', Spawn)
 
     def spawn_turtle(self):
         x = random.uniform(1, 10)
@@ -18,7 +22,11 @@ class Turtle:
         theta = random.uniform(0, 2 * math.pi)
 
         try:
-            self.spawm_service(x, y, theta, "turtle2")
+            # kill default turtle spawned upon starting turtlesim node
+            self.kill_service("turtle1")
+
+            # spawn a turtle at a random location and log the spawn info
+            self.spawn_service(x, y, theta, "turtle1")
             rospy.loginfo(f"Spawned turtle at x:{x:.2f}, y:{y:.2f}, theta:{theta:.2f}")
         except rospy.ServiceException as e:
             rospy.logerr(f"Failed to spawn turtle: {e}")
