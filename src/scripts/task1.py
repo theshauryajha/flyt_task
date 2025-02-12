@@ -38,10 +38,12 @@ class Turtle:
             self.teleport(6, 5, -math.pi/4)
             self.teleport(5, 6, -math.pi/4)
             self.teleport(5.5, 5.5, -math.pi/4)
+            rospy.sleep(0.5)
 
             # kill the turtle after marking the goal
             rospy.loginfo(f"Goal marked; killing default turtle...")
             self.kill("turtle1")
+            rospy.sleep(0.5)
 
         except rospy.ServiceException as e:
             rospy.logerr(f"Failed to mark goal and/or kill turtle: {e}")
@@ -55,6 +57,7 @@ class Turtle:
             # spawn a turtle at a random location and log the spawn info
             self.spawn(x, y, theta, "turtle1")
             rospy.loginfo(f"Spawned turtle at x:{x:.2f}, y:{y:.2f}, theta:{theta:.2f}")
+            rospy.sleep(0.5)
         except rospy.ServiceException as e:
             rospy.logerr(f"Failed to spawn turtle: {e}")
 
@@ -64,6 +67,6 @@ if __name__ == "__main__":
         turtle.mark_goal()
         turtle.spawn_turtle()
         rospy.spin()
-        
+
     except rospy.ROSInterruptException:
         pass
