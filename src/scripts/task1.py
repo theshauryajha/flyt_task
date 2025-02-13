@@ -31,12 +31,12 @@ class Turtle:
 
         # PID Controller parameters
         self.Kp_linear = 2.3
-        self.Ki_linear = 0.0
-        self.Kd_linear = 0.0
+        self.Ki_linear = 0.4
+        self.Kd_linear = 1.25
 
         self.Kp_angular = 5.0
-        self.Ki_angular = 0.0
-        self.Kd_angular = 0.0
+        self.Ki_angular = 0.2
+        self.Kd_angular = 0.6
 
         # Error terms
         self.prev_distance_error = 0.0
@@ -79,7 +79,7 @@ class Turtle:
             rospy.sleep(0.5)
 
             # Kill the turtle after marking the goal
-            rospy.loginfo(f"Goal marked; killing default turtle...")
+            rospy.loginfo("Goal marked; killing default turtle...")
             self.kill("turtle1")
             rospy.sleep(0.5)
 
