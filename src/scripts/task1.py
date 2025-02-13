@@ -7,6 +7,7 @@ Implement a PID Controller for the second turtle to reach the goal.
 '''
 
 import rospy
+from std_msgs.msg import Float64
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen, TeleportAbsolute
@@ -29,11 +30,11 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PID Controller parameters
-        self.Kp_linear = 1.5
+        self.Kp_linear = 2.3
         self.Ki_linear = 0.0
         self.Kd_linear = 0.0
 
-        self.Kp_angular = 4.0
+        self.Kp_angular = 5.0
         self.Ki_angular = 0.0
         self.Kd_angular = 0.0
 
@@ -50,9 +51,14 @@ class Turtle:
         # Current pose data
         self.current_pose = Pose()
 
-        # Setup publisher and subscriber
+        # Setup publisher and subscriber for pose and command velocity
         self.pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
         self.sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
+
+        # Setup publishers to use rqt_mutliplot
+        self.distance_error_pub = rospy.Publisher('/turtle2/distance_error', Float64, queue_size=10)
+        self.angle_error_pub = rospy.Publisher('/turtle2/angle_error', Float64, queue_size=10)
+        self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
 
     def pose_callback(self, data):
         self.current_pose = data
@@ -144,13 +150,23 @@ class Turtle:
         self.prev_distance_error = distance_error
         self.prev_angle_error = angle_error
 
+        self.distance_error_pub.publish(Float64(distance_error))
+        self.angle_error_pub.publish(Float64(angle_error))
+
+        goal_pose = Pose()
+        goal_pose.x = self.goal_x
+        goal_pose.y = self.goal_y
+        self.goal_pub.publish(goal_pose)
+
         # Stop at goal and log progress
+        '''     
         if distance_error < 0.01:
             rospy.loginfo(f"Goal reached!")
             #rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
             cmd_vel.linear.x = 0
             cmd_vel.angular.z = 0
             self.pub.publish(cmd_vel)
+        '''
 
 if __name__ == "__main__":
     try:
