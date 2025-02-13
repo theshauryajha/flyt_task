@@ -29,11 +29,11 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PID Controller parameters
-        self.Kp_linear = 1.0
+        self.Kp_linear = 1.5
         self.Ki_linear = 0.0
         self.Kd_linear = 0.0
 
-        self.Kp_angular = 1.0
+        self.Kp_angular = 4.0
         self.Ki_angular = 0.0
         self.Kd_angular = 0.0
 
@@ -145,14 +145,12 @@ class Turtle:
         self.prev_angle_error = angle_error
 
         # Stop at goal and log progress
-        '''
-        if distance_error < 0.1:
+        if distance_error < 0.01:
             rospy.loginfo(f"Goal reached!")
-            rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
+            #rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
             cmd_vel.linear.x = 0
             cmd_vel.angular.z = 0
             self.pub.publish(cmd_vel)
-        '''
 
 if __name__ == "__main__":
     try:
