@@ -1,9 +1,8 @@
 #!/usr/bin/python3
 
 '''
-Use the default turtle to draw a red 'X' to mark the goal (center).
-Kill the default turtle and spawn a second turtle at a random point.
-Implement a PID Controller for the second turtle to reach the goal.
+Implement the same PID Controller as in Goal 1.
+Define maximum acceleration and deceleration to implement a deceleration profile.
 '''
 
 import rospy
@@ -30,11 +29,11 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PID Controller parameters
-        self.Kp_linear = 2.3
+        self.Kp_linear = 1.7
         self.Ki_linear = 0.0
         self.Kd_linear = 0.0
 
-        self.Kp_angular = 5.0
+        self.Kp_angular = 2.3
         self.Ki_angular = 0.0
         self.Kd_angular = 0.0
 
@@ -59,6 +58,19 @@ class Turtle:
         self.distance_error_pub = rospy.Publisher('/turtle2/distance_error', Float64, queue_size=10)
         self.angle_error_pub = rospy.Publisher('/turtle2/angle_error', Float64, queue_size=10)
         self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
+
+        # Track current linear and angular velocities
+        self.current_linear_velocity = 0.0
+        self.current_angular_velocity = 0.0
+
+        # Define maximum linear and angular acceleration and deceleration
+        self.max_linear_acceleration = 1.5
+        self.max_linear_deceleration = 0.5
+        self.max_angular_acceleration = 2.0
+        self.max_angular_deceleration = 1.0
+
+        # Track the current time
+        self.last_time = rospy.Time.now()
 
     def pose_callback(self, data):
         self.current_pose = data
@@ -117,6 +129,14 @@ class Turtle:
         return angle_error
     
     def move_to_goal(self):
+        # Calculate time delta
+        current_time = rospy.Time.now()
+        dt = (current_time - self.last_time).to_sec()
+        self.last_time = current_time
+
+        if dt == 0:
+            return
+
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
 
@@ -128,19 +148,41 @@ class Turtle:
         distance_error_derivative = distance_error - self.prev_distance_error
         angle_error_derivative = angle_error - self.prev_angle_error
 
-        # Use PID to calculate control signals
-        linear_velocity = (self.Kp_linear * distance_error)
+        # Use PID to calculate target velocities
+        target_linear_velocity = (self.Kp_linear * distance_error)
         + (self.Kd_linear * distance_error_derivative)
         + (self.Ki_linear * self.distance_error_integral)
 
-        angular_velocity = (self.Kp_angular * angle_error)
+        target_angular_velocity = (self.Kp_angular * angle_error)
         + (self.Kd_angular * angle_error_derivative)
         + (self.Ki_angular * self.angle_error_integral)
 
+        # Apply limits to change in linear velocity
+        linear_velocity_delta = target_linear_velocity - self.current_linear_velocity
+        if linear_velocity_delta > 0: # acceleartion
+            max_delta = self.max_linear_acceleration * dt
+            linear_velocity_delta = min(linear_velocity_delta, max_delta)
+        else: # deceleration
+            max_delta = self.max_linear_deceleration * dt
+            linear_velocity_delta = max(linear_velocity_delta, -max_delta)
+        
+        # Apply limits to change in angular velocity
+        angular_velocity_delta = target_angular_velocity - self.current_angular_velocity
+        if angular_velocity_delta > 0: # acceleartion
+            max_delta = self.max_angular_acceleration * dt
+            angular_velocity_delta = min(angular_velocity_delta, max_delta)
+        else: # deceleration
+            max_delta = self.max_angular_deceleration * dt
+            angular_velocity_delta = max(angular_velocity_delta, -max_delta)
+
+        # Update current velocities
+        self.current_linear_velocity += linear_velocity_delta
+        self.current_angular_velocity += angular_velocity_delta
+
         # Create a Twist message
         cmd_vel = Twist()
-        cmd_vel.linear.x = linear_velocity
-        cmd_vel.angular.z = angular_velocity
+        cmd_vel.linear.x = self.current_linear_velocity
+        cmd_vel.angular.z = self.current_angular_velocity
 
         # Publish command velocity and log current pose data
         self.pub.publish(cmd_vel)
