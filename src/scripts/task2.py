@@ -29,11 +29,11 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PID Controller parameters
-        self.Kp_linear = 1.7
+        self.Kp_linear = 0.8
         self.Ki_linear = 0.0
         self.Kd_linear = 0.0
 
-        self.Kp_angular = 2.3
+        self.Kp_angular = 1.2
         self.Ki_angular = 0.0
         self.Kd_angular = 0.0
 
@@ -64,10 +64,10 @@ class Turtle:
         self.current_angular_velocity = 0.0
 
         # Define maximum linear and angular acceleration and deceleration
-        self.max_linear_acceleration = 1.5
-        self.max_linear_deceleration = 0.5
+        self.max_linear_acceleration = 1.0
+        self.max_linear_deceleration = 0.2
         self.max_angular_acceleration = 2.0
-        self.max_angular_deceleration = 1.0
+        self.max_angular_deceleration = 0.8
 
         # Track the current time
         self.last_time = rospy.Time.now()
