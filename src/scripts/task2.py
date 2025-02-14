@@ -29,13 +29,13 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PID Controller parameters
-        self.Kp_linear = 0.8
+        self.Kp_linear = 0.4
         self.Ki_linear = 0.0
-        self.Kd_linear = 0.0
+        self.Kd_linear = 1.0
 
-        self.Kp_angular = 1.2
+        self.Kp_angular = 0.6
         self.Ki_angular = 0.0
-        self.Kd_angular = 0.0
+        self.Kd_angular = 1.25
 
         # Error terms
         self.prev_distance_error = 0.0
