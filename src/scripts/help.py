@@ -11,24 +11,25 @@ class Turtle:
     def __init__(self):
         rospy.init_node("turtle", anonymous=True)
 
-        # Use TurtleSim services to start at a given Pose
+        # Setup services
         rospy.wait_for_service('kill')
         rospy.wait_for_service('spawn')
-
+        
         self.kill = rospy.ServiceProxy('kill', Kill)
         self.spawn = rospy.ServiceProxy('spawn', Spawn)
 
+        # Start at Pose (x, y, theta) = (1.0, 1.0, 0.0)
         self.kill("turtle1")
-        self.spawn(1.0, 1.0, 0.0, "turtle1")
+        self.spawn(1, 1, 0, "turtle1")
 
         # PID Controller parameters
-        self.Kp_linear = 0.3
+        self.Kp_linear = 1.75
         self.Ki_linear = 0.0
-        self.Kd_linear = 1.3
+        self.Kd_linear = 0.75
 
-        self.Kp_angular = 0.5
+        self.Kp_angular = 2.25
         self.Ki_angular = 0.0
-        self.Kd_angular = 1.7
+        self.Kd_angular = 1.0
 
         # Error terms
         self.prev_distance_error = 0.0
@@ -46,21 +47,21 @@ class Turtle:
         self.goal_pose = Pose()
         self.goal_pose.x, self.goal_pose.y = self.waypoints[self.next_waypoint]
 
-        # Current pose data
+        # Track current pose
         self.current_pose = Pose()
-
-        # Setup publisher and subscriber for pose and command velocity
+        
+        # Setup command publisher and pose subscriber
         self.cmd_pub = rospy.Publisher('turtle1/cmd_vel', Twist, queue_size=10)
-        self.goal_sub = rospy.Subscriber('turtle1/pose', Pose, self.pose_callback)
+        self.pose_sub = rospy.Subscriber('turtle1/pose', Pose, self.pose_callback)
 
         # Track current linear and angular velocities
         self.current_linear_velocity = 0.0
         self.current_angular_velocity = 0.0
 
         # Define maximum linear and angular acceleration and deceleration
-        self.max_linear_acceleration = 1.0
-        self.max_linear_deceleration = 0.2
-        self.max_angular_acceleration = 2.0
+        self.max_linear_acceleration = 1.25
+        self.max_linear_deceleration = 0.6
+        self.max_angular_acceleration = 1.5
         self.max_angular_deceleration = 0.8
 
         # Track the current time

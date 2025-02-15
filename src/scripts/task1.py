@@ -11,8 +11,8 @@ from std_msgs.msg import Float64
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen, TeleportAbsolute
-import random
-import math
+from random import uniform
+from math import pi, sqrt, atan2
 
 class Turtle:
     def __init__(self):
@@ -70,12 +70,12 @@ class Turtle:
             self.set_pen(255, 0, 0, 3, 0)
 
             # Draw the marker
-            self.teleport(6, 6, math.pi/4)
-            self.teleport(5, 5, math.pi/4)
-            self.teleport(5.5, 5.5, math.pi/4)
-            self.teleport(6, 5, -math.pi/4)
-            self.teleport(5, 6, -math.pi/4)
-            self.teleport(5.5, 5.5, -math.pi/4)
+            self.teleport(6, 6, pi/4)
+            self.teleport(5, 5, pi/4)
+            self.teleport(5.5, 5.5, pi/4)
+            self.teleport(6, 5, -pi/4)
+            self.teleport(5, 6, -pi/4)
+            self.teleport(5.5, 5.5, -pi/4)
             rospy.sleep(0.5)
 
             # Kill the turtle after marking the goal
@@ -87,9 +87,9 @@ class Turtle:
             rospy.logerr(f"Failed to mark goal and/or kill turtle: {e}")
 
     def spawn_turtle(self):
-        x = random.uniform(1, 10)
-        y = random.uniform(1, 10)
-        theta = random.uniform(0, 2 * math.pi)
+        x = uniform(1, 10)
+        y = uniform(1, 10)
+        theta = uniform(0, 2 * pi)
 
         try:
             # Spawn a turtle at a random location and log the spawn info
@@ -101,18 +101,18 @@ class Turtle:
 
     def calculate_distance_error(self):
         # Euclidian Distance = ((x2-x1)^2 + (y2-y1)^2)^0.5
-        return math.sqrt((self.goal_x - self.current_pose.x)**2 + (self.goal_y - self.current_pose.y)**2)
+        return sqrt((self.goal_x - self.current_pose.x)**2 + (self.goal_y - self.current_pose.y)**2)
     
     def calculate_angle_error(self):
         # Slope of line between two points: arctan((y2-y1) / (x2-x1))
-        desired_angle = math.atan2((self.goal_y - self.current_pose.y), (self.goal_x - self.current_pose.x))
+        desired_angle = atan2((self.goal_y - self.current_pose.y), (self.goal_x - self.current_pose.x))
         angle_error = desired_angle - self.current_pose.theta
 
         # Normalise angle to [-pi, pi]
-        while angle_error > math.pi:
-            angle_error -= 2 * math.pi
-        while angle_error < -math.pi:
-            angle_error += 2 * math.pi
+        while angle_error > pi:
+            angle_error -= 2 * pi
+        while angle_error < -pi:
+            angle_error += 2 * pi
 
         return angle_error
     
@@ -129,13 +129,13 @@ class Turtle:
         angle_error_derivative = angle_error - self.prev_angle_error
 
         # Use PID to calculate control signals
-        linear_velocity = (self.Kp_linear * distance_error)
-        + (self.Kd_linear * distance_error_derivative)
-        + (self.Ki_linear * self.distance_error_integral)
+        linear_velocity = (self.Kp_linear * distance_error +
+                           self.Kd_linear * distance_error_derivative +
+                           self.Ki_linear * self.distance_error_integral)
 
-        angular_velocity = (self.Kp_angular * angle_error)
-        + (self.Kd_angular * angle_error_derivative)
-        + (self.Ki_angular * self.angle_error_integral)
+        angular_velocity = (self.Kp_angular * angle_error +
+                            self.Kd_angular * angle_error_derivative +
+                            self.Ki_angular * self.angle_error_integral)
 
         # Create a Twist message
         cmd_vel = Twist()

@@ -149,13 +149,13 @@ class Turtle:
         angle_error_derivative = angle_error - self.prev_angle_error
 
         # Use PID to calculate target velocities
-        target_linear_velocity = (self.Kp_linear * distance_error)
-        + (self.Kd_linear * distance_error_derivative)
-        + (self.Ki_linear * self.distance_error_integral)
+        target_linear_velocity = (self.Kp_linear * distance_error +
+                                  self.Kd_linear * distance_error_derivative +
+                                  self.Ki_linear * self.distance_error_integral)
 
-        target_angular_velocity = (self.Kp_angular * angle_error)
-        + (self.Kd_angular * angle_error_derivative)
-        + (self.Ki_angular * self.angle_error_integral)
+        target_angular_velocity = (self.Kp_angular * angle_error +
+                                   self.Kd_angular * angle_error_derivative +
+                                   self.Ki_angular * self.angle_error_integral)
 
         # Apply limits to change in linear velocity
         linear_velocity_delta = target_linear_velocity - self.current_linear_velocity
