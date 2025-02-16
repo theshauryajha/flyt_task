@@ -1,11 +1,16 @@
 #!/usr/bin/python3
 
+'''
+Implement the same controller as used in Goal 1 - but with an external acceleration profile.
+Implement this acceleration profile by limiting how aggressively the turtle can accelerate or decelerate.
+Use this controller to draw a grid patter.
+'''
 import rospy
-from std_msgs.msg import Float64
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill
 from math import pi, sqrt, atan2, sin, cos
+import numpy as np
 
 class Turtle:
     def __init__(self):
@@ -22,19 +27,13 @@ class Turtle:
         self.spawn(1.0, 1.0, 0.0, "turtle1")
 
         # PID Controller parameters
-        self.Kp_linear = 0.3
+        self.Kp_linear = 1.25
         self.Ki_linear = 0.0
-        self.Kd_linear = 1.3
-
-        self.Kp_angular = 0.5
-        self.Ki_angular = 0.0
-        self.Kd_angular = 1.7
+        self.Kd_linear = 2.3
 
         # Error terms
         self.prev_distance_error = 0.0
         self.distance_error_integral = 0.0
-        self.prev_angle_error = 0.0
-        self.angle_error_integral = 0.0
 
         # Define waypoints for the lawnmower pattern
         self.waypoints = [(1,1), (10,1), (10,4), (1,4), (1,7), (10,7), (10,10), (1,10)]
@@ -43,25 +42,21 @@ class Turtle:
         self.next_waypoint = 0
 
         # Goal pose to be initialized as first waypoint
-        self.goal_pose = Pose()
-        self.goal_pose.x, self.goal_pose.y = self.waypoints[self.next_waypoint]
-
+        self.goal = Pose()
+        self.goal.x, self.goal.y = self.waypoints[self.next_waypoint]
         # Current pose data
         self.current_pose = Pose()
 
         # Setup publisher and subscriber for pose and command velocity
         self.cmd_pub = rospy.Publisher('turtle1/cmd_vel', Twist, queue_size=10)
-        self.goal_sub = rospy.Subscriber('turtle1/pose', Pose, self.pose_callback)
+        self.pose_sub = rospy.Subscriber('turtle1/pose', Pose, self.pose_callback)
 
-        # Track current linear and angular velocities
-        self.current_linear_velocity = 0.0
-        self.current_angular_velocity = 0.0
+        # Publish goal for rqt_multiplot
+        self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
 
-        # Define maximum linear and angular acceleration and deceleration
+        # Define maximum acceleration and deceleration
         self.max_linear_acceleration = 1.0
-        self.max_linear_deceleration = 0.2
-        self.max_angular_acceleration = 2.0
-        self.max_angular_deceleration = 0.8
+        self.max_linear_deceleration = 1.0
 
         # Track the current time
         self.last_time = rospy.Time.now()
@@ -72,16 +67,18 @@ class Turtle:
 
     def calculate_distance_error(self):
         # Euclidian Distance = ((x2-x1)^2 + (y2-y1)^2)^0.5
-        return sqrt((self.goal_pose.x - self.current_pose.x)**2 + (self.goal_pose.y - self.current_pose.y)**2)
+        return sqrt((self.goal.x - self.current_pose.x)**2 + (self.goal.y - self.current_pose.y)**2)
     
     def calculate_angle_error(self):
         # Slope of line between two points: arctan((y2-y1) / (x2-x1))
-        desired_angle = atan2((self.goal_pose.y - self.current_pose.y), (self.goal_pose.x - self.current_pose.x))
+        desired_angle = atan2((self.goal.y - self.current_pose.y), (self.goal.x - self.current_pose.x))
         angle_error = desired_angle - self.current_pose.theta
 
         # Normalise angle
-        angle_error = atan2(sin(angle_error), cos(angle_error))
-        return angle_error
+        return self.wrap_angle(angle_error)
+    
+    def wrap_angle(self, theta):
+        return atan2(sin(theta), cos(theta))
     
     def move_to_goal(self):
         # Calculate time delta
@@ -92,79 +89,64 @@ class Turtle:
         if dt == 0:
             return
 
+        # Calculate error
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
 
         # Update integral terms
         self.distance_error_integral += distance_error
-        self.angle_error_integral += angle_error
 
         # Set derivative terms
         distance_error_derivative = distance_error - self.prev_distance_error
-        angle_error_derivative = angle_error - self.prev_angle_error
 
-        # PID Control for rotation
-        target_angular_velocity = (self.Kp_angular * angle_error +
-                                   self.Kd_angular * angle_error_derivative +
-                                   self.Ki_angular * self.angle_error_integral)
+        # PID Control for translation
+        target_linear_velocity = (self.Kp_linear * distance_error +
+                                self.Kd_linear * distance_error_derivative +
+                                self.Ki_linear * self.distance_error_integral)
 
-        # Apply limits to change in angular velocity
-        angular_velocity_delta = target_angular_velocity - self.current_angular_velocity
-        if angular_velocity_delta > 0: # acceleartion
-            max_delta = self.max_angular_acceleration * dt
-            angular_velocity_delta = min(angular_velocity_delta, max_delta)
+        # Apply limits to change in linear velocity
+        linear_velocity_delta = target_linear_velocity - self.current_pose.linear_velocity
+        if linear_velocity_delta > 0: # acceleartion
+            max_delta = self.max_linear_acceleration * dt
+            linear_velocity_delta = min(linear_velocity_delta, max_delta)
         else: # deceleration
-            max_delta = self.max_angular_deceleration * dt
-            angular_velocity_delta = max(angular_velocity_delta, -max_delta)
+            max_delta = self.max_linear_deceleration * dt
+            linear_velocity_delta = max(linear_velocity_delta, -max_delta)
 
-        self.current_angular_velocity += angular_velocity_delta
+        velocity_magnitude = self.current_pose.linear_velocity + linear_velocity_delta
+        velocity_direction = angle_error
 
-        cmd_vel = Twist()
+        velocity_global = np.array([
+            [velocity_magnitude * cos(velocity_direction)],
+            [velocity_magnitude * sin(velocity_direction)]
+        ])
 
-        if abs(angle_error) > (pi / 60):
-            # First, rotate the turtle to face the goal
-            cmd_vel.angular.z = self.current_angular_velocity
-            cmd_vel.linear.x = 0
-        else:
-            # When facing the goal, reset angle error and move forward only
-            self.angle_error_integral = 0
-            self.prev_angle_error = 0
-            cmd_vel.angular.z = 0
+        # Transform to local frame
+        orientation = self.wrap_angle(self.current_pose.theta)
+        rotation_matrix = np.array([
+            [cos(orientation), sin(orientation)],
+            [-sin(orientation), cos(orientation)]
+        ])
+        velocity_local = rotation_matrix @ velocity_global
 
-            # PID Control for translation
-            target_linear_velocity = (self.Kp_linear * distance_error +
-                                      self.Kd_linear * distance_error_derivative +
-                                      self.Ki_linear * self.distance_error_integral)
+        cmd = Twist()
 
-            # Apply limits to change in linear velocity
-            linear_velocity_delta = target_linear_velocity - self.current_linear_velocity
-            if linear_velocity_delta > 0: # acceleartion
-                max_delta = self.max_linear_acceleration * dt
-                linear_velocity_delta = min(linear_velocity_delta, max_delta)
-            else: # deceleration
-                max_delta = self.max_linear_deceleration * dt
-                linear_velocity_delta = max(linear_velocity_delta, -max_delta)
+        cmd.linear.x = velocity_local[0].item()
+        cmd.linear.y = velocity_local[1].item()
+        self.cmd_pub.publish(cmd)
 
-            self.current_linear_velocity += linear_velocity_delta
-
-            cmd_vel.linear.x = self.current_linear_velocity
-
-        self.cmd_pub.publish(cmd_vel)
-
-        # Update the previous error terms
-        self.prev_distance_error = distance_error
-        self.prev_angle_error = angle_error
+        self.goal_pub.publish(self.goal)
 
         # Check if a waypoint has been reached
         if distance_error < 0.01:
             self.next_waypoint += 1
             if self.next_waypoint < len(self.waypoints):
-                self.goal_pose.x, self.goal_pose.y = self.waypoints[self.next_waypoint]
+                self.goal.x, self.goal.y = self.waypoints[self.next_waypoint]
             else: # The pattern is complete
                 rospy.loginfo("Pattern completed!")
-                cmd_vel.linear.x = 0
-                cmd_vel.angular.z = 0
-                self.cmd_pub.publish(cmd_vel)
+                cmd.linear.x = 0
+                cmd.angular.z = 0
+                self.cmd_pub.publish(cmd)
 
 if __name__ == "__main__":
     try:

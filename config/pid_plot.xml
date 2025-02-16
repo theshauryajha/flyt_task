@@ -42,8 +42,8 @@
                                     <field>x</field>
                                     <field_type>0</field_type>
                                     <scale>
-                                        <absolute_maximum>11</absolute_maximum>
-                                        <absolute_minimum>0</absolute_minimum>
+                                        <absolute_maximum>6</absolute_maximum>
+                                        <absolute_minimum>5</absolute_minimum>
                                         <relative_maximum>0</relative_maximum>
                                         <relative_minimum>-1000</relative_minimum>
                                         <type>1</type>
@@ -93,8 +93,8 @@
                                     <field>y</field>
                                     <field_type>0</field_type>
                                     <scale>
-                                        <absolute_maximum>11</absolute_maximum>
-                                        <absolute_minimum>0</absolute_minimum>
+                                        <absolute_maximum>6</absolute_maximum>
+                                        <absolute_minimum>5</absolute_minimum>
                                         <relative_maximum>0</relative_maximum>
                                         <relative_minimum>-1000</relative_minimum>
                                         <type>1</type>
@@ -165,8 +165,8 @@
                             </data>
                             <style>
                                 <lines_interpolate>false</lines_interpolate>
-                                <pen_style>2</pen_style>
-                                <pen_width>2</pen_width>
+                                <pen_style>3</pen_style>
+                                <pen_width>1</pen_width>
                                 <render_antialias>false</render_antialias>
                                 <steps_invert>false</steps_invert>
                                 <sticks_baseline>0</sticks_baseline>
