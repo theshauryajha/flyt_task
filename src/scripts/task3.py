@@ -35,9 +35,9 @@ class Turtle:
         self.spawn(spawn_x, spawn_y, 0, "turtle1")
 
         # PID Controller parameters
-        self.Kp_linear = 23.0
+        self.Kp_linear = self.speed * 10.0 # 23.0
         self.Ki_linear = 0.0
-        self.Kd_linear = 17.0
+        self.Kd_linear = 0.0 # 17.0
 
         # Error terms
         self.prev_distance_error = 0.0
@@ -139,7 +139,7 @@ class Turtle:
         target_linear_velocity = (self.Kp_linear * distance_error +
                                 self.Kd_linear * distance_error_derivative +
                                 self.Ki_linear * self.distance_error_integral)
-
+        '''
         # Apply limits to change in linear velocity
         linear_velocity_delta = target_linear_velocity - self.current_pose.linear_velocity
         if linear_velocity_delta > 0: # acceleartion
@@ -148,8 +148,8 @@ class Turtle:
         else: # deceleration
             max_delta = self.max_linear_deceleration * dt
             linear_velocity_delta = max(linear_velocity_delta, -max_delta)
-
-        velocity_magnitude = self.current_pose.linear_velocity + linear_velocity_delta
+        '''
+        velocity_magnitude = target_linear_velocity # self.current_pose.linear_velocity + linear_velocity_delta
         velocity_direction = angle_error
 
         velocity_global = np.array([
@@ -181,7 +181,7 @@ class Turtle:
 
 if __name__ == "__main__":
     try:
-        turtle = Turtle(3.0)
+        turtle = Turtle(3.0, 5.0)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
