@@ -1,9 +1,10 @@
 #!/usr/bin/python3
+# -*- coding: utf-8 -*-
 
-'''
-Move a turtle in a circular trajectory with variable speed and radius
-around the center of the turtlesim frame.
-'''
+"""
+Move a TurtleSim turtle in a circular trajectory around the center of the TurtleSim frame.
+Provide variables to control radius and speed of the turtle.
+"""
 
 import rospy
 from turtlesim.msg import Pose
@@ -12,36 +13,40 @@ from turtlesim.srv import Spawn, Kill
 from math import pi, sqrt, atan2, sin, cos
 import numpy as np
 
+
 class Turtle:
+    """
+    TurtleSim turtle turtle that implements a P - Controller on the turtle's forward and strafe velocities.
+    Generate waypoints for a circular trajectory (at every 1 degree).
+
+    Publishes the real Pose of the turtle as well as the real Pose with a random Gaussian noise, every 5 seconds.
+    """
     def __init__(self, radius=2.5, speed=1.0):
+        """
+        Args:
+            radius (float): Radius of the circular trajectory
+            speed (float): Scaling factor for revolution speed
+        """
+
         rospy.init_node("turtle", anonymous=True)
         self.radius = radius
         self.speed = speed
 
-        # Use TurtleSim services to start at a given Pose
+        """Use TurtleSim Kill and Spawn services to start at a point on a circle of given radius."""
         rospy.wait_for_service('kill')
         rospy.wait_for_service('spawn')
-
         self.kill = rospy.ServiceProxy('kill', Kill)
         self.spawn = rospy.ServiceProxy('spawn', Spawn)
-
         self.kill("turtle1")
 
-        # Center of TurtleSim frame
-        center_x, center_y = 5.5, 5.5
+        center_x, center_y = 5.5, 5.5 # Center of TurtleSim frame
         
         # Spawn at (center_x + radius, center_y)
         spawn_x, spawn_y = center_x + self.radius, center_y
         self.spawn(spawn_x, spawn_y, 0, "turtle1")
 
-        # PID Controller parameters
-        self.Kp_linear = self.speed * 10.0 # 23.0
-        self.Ki_linear = 0.0
-        self.Kd_linear = 0.0 # 17.0
-
-        # Error terms
-        self.prev_distance_error = 0.0
-        self.distance_error_integral = 0.0
+        # PD - Control parameter
+        self.Kp = self.speed * 10.0
 
         # Generate circular waypoints
         self.waypoints = []
@@ -77,15 +82,21 @@ class Turtle:
         self.noisy_pose = Pose()
 
         # Define maximum acceleration and deceleration
-        self.max_linear_acceleration = 10.0
-        self.max_linear_deceleration = 10.0
+        self.max_acceleration = 10.0
+        self.max_deceleration = 10.0
 
         # Track the current time
         self.last_time = rospy.Time.now()
 
     def pose_callback(self, data):
+        """
+        Updates current pose from TurtleSim pose message.
+        Calls the controller function for the current pose.
+
+        Publishes the real Pose and the noisy Pose every 5 seconds.
+        """
         self.current_pose = data
-        self.move_to_goal()
+        self.draw_circle()
 
         # Publish the current pose of the turtle every 5 seconds
         if (rospy.Time.now() - self.last_published_time).to_sec() >= 5.0:
@@ -102,11 +113,19 @@ class Turtle:
             self.last_published_time = rospy.Time.now()
 
     def calculate_distance_error(self):
-        # Euclidian Distance = ((x2-x1)^2 + (y2-y1)^2)^0.5
+        """
+        Calculates the Euclidian distance between the goal and current position of the turtle.
+        Returns:
+            float: Current distance error
+        """
         return sqrt((self.goal.x - self.current_pose.x)**2 + (self.goal.y - self.current_pose.y)**2)
     
     def calculate_angle_error(self):
-        # Slope of line between two points: arctan((y2-y1) / (x2-x1))
+        """
+        Calculates the smallest angular error between the current heading of the turtle and direction to the goal.
+        Returns:
+            float: Smallest angle difference (in radians)
+        """
         desired_angle = atan2((self.goal.y - self.current_pose.y), (self.goal.x - self.current_pose.x))
         angle_error = desired_angle - self.current_pose.theta
 
@@ -114,9 +133,21 @@ class Turtle:
         return self.wrap_angle(angle_error)
     
     def wrap_angle(self, theta):
+        """
+        Normalizes angle to range [-pi, pi]
+        Args:
+            theta (float): Angle to be normalized
+        Returns:
+            float: Normalized angle
+        """
         return atan2(sin(theta), cos(theta))
     
-    def move_to_goal(self):
+    def draw_circle(self):
+        """
+        Uses the next waypoint as a goal and implements a similar P - Controller as before to move to it.
+        Once the waypoint is reached, it updates the goal to the next waypoint.
+        """
+
         # Calculate time delta
         current_time = rospy.Time.now()
         dt = (current_time - self.last_time).to_sec()
@@ -129,27 +160,10 @@ class Turtle:
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
 
-        # Update integral terms
-        self.distance_error_integral += distance_error
-
-        # Set derivative terms
-        distance_error_derivative = distance_error - self.prev_distance_error
-
-        # PID Control for translation
-        target_linear_velocity = (self.Kp_linear * distance_error +
-                                self.Kd_linear * distance_error_derivative +
-                                self.Ki_linear * self.distance_error_integral)
-        '''
-        # Apply limits to change in linear velocity
-        linear_velocity_delta = target_linear_velocity - self.current_pose.linear_velocity
-        if linear_velocity_delta > 0: # acceleartion
-            max_delta = self.max_linear_acceleration * dt
-            linear_velocity_delta = min(linear_velocity_delta, max_delta)
-        else: # deceleration
-            max_delta = self.max_linear_deceleration * dt
-            linear_velocity_delta = max(linear_velocity_delta, -max_delta)
-        '''
-        velocity_magnitude = target_linear_velocity # self.current_pose.linear_velocity + linear_velocity_delta
+        # P - Control for translation
+        target_velocity = self.Kp * distance_error
+        
+        velocity_magnitude = target_velocity
         velocity_direction = angle_error
 
         velocity_global = np.array([
@@ -165,10 +179,12 @@ class Turtle:
         ])
         velocity_local = rotation_matrix @ velocity_global
 
+        # Create a Twist message
         cmd = Twist()
-
         cmd.linear.x = velocity_local[0].item()
         cmd.linear.y = velocity_local[1].item()
+
+        # Publish the control signals
         self.cmd_pub.publish(cmd)
 
         # Check if a waypoint has been reached
@@ -177,7 +193,9 @@ class Turtle:
             if self.next_waypoint < len(self.waypoints):
                 self.goal.x, self.goal.y = self.waypoints[self.next_waypoint]
             else: # Circle completed, repeat
+                rospy.loginfo("Circle complete!")
                 self.next_waypoint = 0
+
 
 if __name__ == "__main__":
     try:

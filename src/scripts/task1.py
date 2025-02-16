@@ -1,10 +1,5 @@
 #!/usr/bin/python3
-
-'''
-Use the default turtle to draw a red 'X' to mark the goal (center).
-Kill the default turtle and spawn a second turtle at a random point.
-Implement a PID Controller for the second turtle to reach the goal.
-'''
+# -*- coding: utf-8 -*-
 
 import rospy
 from std_msgs.msg import Float64
@@ -14,7 +9,15 @@ from turtlesim.srv import Spawn, Kill, SetPen, TeleportAbsolute
 from random import uniform
 from math import pi, sqrt, atan2, sin, cos
 
+
 class Turtle:
+    """
+    TurtleSim turtle using two separate P - Controllers for position and orientation.
+    Implements a control loop that moves the turtle to a goal position using velocity commands,
+    by first rotating and then translating towards it.
+
+    Position control determines linear velocity, while orientation control determines angular velocity.
+    """
     def __init__(self):
         rospy.init_node("turtle", anonymous=True)
 
@@ -29,20 +32,9 @@ class Turtle:
         self.set_pen = rospy.ServiceProxy('turtle1/set_pen', SetPen)
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
-        # PID Controller parameters
+        # P - Control parameters
         self.Kp_linear = 3.0
-        self.Ki_linear = 0.0
-        self.Kd_linear = 0.0
-
         self.Kp_angular = 2.0
-        self.Ki_angular = 0.0
-        self.Kd_angular = 0.0
-
-        # Error terms
-        self.prev_distance_error = 0.0
-        self.distance_error_integral = 0.0
-        self.prev_angle_error = 0.0
-        self.angle_error_integral = 0.0
 
         # Goal pose
         self.goal = Pose()
@@ -62,12 +54,21 @@ class Turtle:
         self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
 
     def pose_callback(self, data):
+        """
+        Updates current pose from TurtleSim pose message.
+        Calls the controller function for the current pose.
+        """
         self.current_pose = data
         self.move_to_goal()
 
     def mark_goal(self):
+        """
+        Marks the goal (say the center of the TurtleSim window) with a red cross,
+        by using the TurtleSim SetPen and TeleportAbsolute services.
+        Kills the default turtle by using the TurtleSim Kill service.
+        """
         try:
-            # Set pen
+            # Set pen color -> red
             self.set_pen(255, 0, 0, 3, 0)
 
             # Draw the marker
@@ -88,6 +89,10 @@ class Turtle:
             rospy.logerr(f"Failed to mark goal and/or kill turtle: {e}")
 
     def spawn_turtle(self):
+        """
+        Generates a random pose (x, y, theta).
+        Uses the TurtleSim Spawn service to spawn a new turtle at this random pose.
+        """
         x = uniform(1, 10)
         y = uniform(1, 10)
         theta = uniform(0, 2 * pi)
@@ -101,11 +106,19 @@ class Turtle:
             rospy.logerr(f"Failed to spawn turtle: {e}")
 
     def calculate_distance_error(self):
-        # Euclidian Distance = ((x2-x1)^2 + (y2-y1)^2)^0.5
+        """
+        Calculates the Euclidian distance between the goal and current position of the turtle.
+        Returns:
+            float: Current distance error
+        """
         return sqrt((self.goal.x - self.current_pose.x)**2 + (self.goal.y - self.current_pose.y)**2)
     
     def calculate_angle_error(self):
-        # Slope of line between two points: arctan((y2-y1) / (x2-x1))
+        """
+        Calculates the smallest angular error between the current heading of the turtle and direction to the goal.
+        Returns:
+            float: Smallest angle difference (in radians)
+        """
         desired_angle = atan2((self.goal.y - self.current_pose.y), (self.goal.x - self.current_pose.x))
         angle_error = desired_angle - self.current_pose.theta
 
@@ -114,49 +127,36 @@ class Turtle:
         return angle_error
     
     def move_to_goal(self):
+        """
+        Implements a P - Controller for angular velocity for the turtle to face the goal,
+        then implements a separate P - Controller for linear velocity to move to the goal.
+        """
+        # Calculate error
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
 
-        # Update integral terms
-        self.distance_error_integral += distance_error
-        self.angle_error_integral += angle_error
+        # P - Control for rotation
+        angular_velocity = self.Kp_angular * angle_error
 
-        # Set derivative terms
-        distance_error_derivative = distance_error - self.prev_distance_error
-        angle_error_derivative = angle_error - self.prev_angle_error
-
-        # PID Control for rotation
-        angular_velocity = (self.Kp_angular * angle_error +
-                            self.Kd_angular * angle_error_derivative +
-                            self.Ki_angular * self.angle_error_integral)
-
+        # Create a Twist message
         cmd_vel = Twist()
 
+        # Threshold of 1deg for precise rotation
         if abs(angle_error) > (pi / 180):
-            # First, rotate the turtle to face the goal
             cmd_vel.angular.z = angular_velocity
             cmd_vel.linear.x = 0
         else:
-            # When facing the goal, reset angle error and move forward only
             self.angle_error_integral = 0
             self.prev_angle_error = 0
             cmd_vel.angular.z = 0
 
-            # PID Control for translation
-            linear_velocity = (self.Kp_linear * distance_error +
-                                      self.Kd_linear * distance_error_derivative +
-                                      self.Ki_linear * self.distance_error_integral)
+            # P - Control for translation
+            linear_velocity = self.Kp_linear * distance_error
             cmd_vel.linear.x = linear_velocity
 
-        self.cmd_pub.publish(cmd_vel)
-
-        # Publish command velocity and log current pose data
+        # Publish control signals and log current pose data
         self.cmd_pub.publish(cmd_vel)
         rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
-
-        # Update the previous error terms
-        self.prev_distance_error = distance_error
-        self.prev_angle_error = angle_error
 
         # Plot errors and goal
         self.distance_error_pub.publish(Float64(distance_error))
@@ -164,11 +164,13 @@ class Turtle:
         self.goal_pub.publish(self.goal)
 
         # Stop at goal and log progress
+        # Threshold of 0.01 units for accuracy
         if distance_error < 0.01:
             rospy.loginfo(f"Goal reached!")
             cmd_vel.linear.x = 0
             cmd_vel.angular.z = 0
             self.cmd_pub.publish(cmd_vel)
+
 
 if __name__ == "__main__":
     try:
