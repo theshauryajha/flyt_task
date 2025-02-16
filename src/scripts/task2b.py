@@ -5,6 +5,7 @@ Implement the same controller as used in Goal 1 - but with an external accelerat
 Implement this acceleration profile by limiting how aggressively the turtle can accelerate or decelerate.
 Use this controller to draw a grid patter.
 '''
+
 import rospy
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
