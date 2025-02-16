@@ -12,7 +12,7 @@ from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen, TeleportAbsolute
 from random import uniform
-from math import pi, sqrt, atan2
+from math import pi, sqrt, atan2, sin, cos
 
 class Turtle:
     def __init__(self):
@@ -30,11 +30,11 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PID Controller parameters
-        self.Kp_linear = 2.3
+        self.Kp_linear = 3.0
         self.Ki_linear = 0.0
         self.Kd_linear = 0.0
 
-        self.Kp_angular = 5.0
+        self.Kp_angular = 2.0
         self.Ki_angular = 0.0
         self.Kd_angular = 0.0
 
@@ -44,16 +44,17 @@ class Turtle:
         self.prev_angle_error = 0.0
         self.angle_error_integral = 0.0
 
-        # Goal coordinates
-        self.goal_x = 5.5
-        self.goal_y = 5.5
+        # Goal pose
+        self.goal = Pose()
+        self.goal.x = 5.5
+        self.goal.y = 5.5
 
         # Current pose data
         self.current_pose = Pose()
 
         # Setup publisher and subscriber for pose and command velocity
-        self.pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
-        self.sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
+        self.cmd_pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
+        self.pose_sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
 
         # Setup publishers to use rqt_mutliplot
         self.distance_error_pub = rospy.Publisher('/turtle2/distance_error', Float64, queue_size=10)
@@ -101,19 +102,15 @@ class Turtle:
 
     def calculate_distance_error(self):
         # Euclidian Distance = ((x2-x1)^2 + (y2-y1)^2)^0.5
-        return sqrt((self.goal_x - self.current_pose.x)**2 + (self.goal_y - self.current_pose.y)**2)
+        return sqrt((self.goal.x - self.current_pose.x)**2 + (self.goal.y - self.current_pose.y)**2)
     
     def calculate_angle_error(self):
         # Slope of line between two points: arctan((y2-y1) / (x2-x1))
-        desired_angle = atan2((self.goal_y - self.current_pose.y), (self.goal_x - self.current_pose.x))
+        desired_angle = atan2((self.goal.y - self.current_pose.y), (self.goal.x - self.current_pose.x))
         angle_error = desired_angle - self.current_pose.theta
 
-        # Normalise angle to [-pi, pi]
-        while angle_error > pi:
-            angle_error -= 2 * pi
-        while angle_error < -pi:
-            angle_error += 2 * pi
-
+        # Normalise angle
+        angle_error = atan2(sin(angle_error), cos(angle_error))
         return angle_error
     
     def move_to_goal(self):
@@ -128,43 +125,50 @@ class Turtle:
         distance_error_derivative = distance_error - self.prev_distance_error
         angle_error_derivative = angle_error - self.prev_angle_error
 
-        # Use PID to calculate control signals
-        linear_velocity = (self.Kp_linear * distance_error +
-                           self.Kd_linear * distance_error_derivative +
-                           self.Ki_linear * self.distance_error_integral)
-
+        # PID Control for rotation
         angular_velocity = (self.Kp_angular * angle_error +
                             self.Kd_angular * angle_error_derivative +
                             self.Ki_angular * self.angle_error_integral)
 
-        # Create a Twist message
         cmd_vel = Twist()
-        cmd_vel.linear.x = linear_velocity
-        cmd_vel.angular.z = angular_velocity
+
+        if abs(angle_error) > (pi / 180):
+            # First, rotate the turtle to face the goal
+            cmd_vel.angular.z = angular_velocity
+            cmd_vel.linear.x = 0
+        else:
+            # When facing the goal, reset angle error and move forward only
+            self.angle_error_integral = 0
+            self.prev_angle_error = 0
+            cmd_vel.angular.z = 0
+
+            # PID Control for translation
+            linear_velocity = (self.Kp_linear * distance_error +
+                                      self.Kd_linear * distance_error_derivative +
+                                      self.Ki_linear * self.distance_error_integral)
+            cmd_vel.linear.x = linear_velocity
+
+        self.cmd_pub.publish(cmd_vel)
 
         # Publish command velocity and log current pose data
-        self.pub.publish(cmd_vel)
+        self.cmd_pub.publish(cmd_vel)
         rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
 
         # Update the previous error terms
         self.prev_distance_error = distance_error
         self.prev_angle_error = angle_error
 
+        # Plot errors and goal
         self.distance_error_pub.publish(Float64(distance_error))
         self.angle_error_pub.publish(Float64(angle_error))
-
-        goal_pose = Pose()
-        goal_pose.x = self.goal_x
-        goal_pose.y = self.goal_y
-        self.goal_pub.publish(goal_pose)
+        self.goal_pub.publish(self.goal)
 
         # Stop at goal and log progress
         if distance_error < 0.01:
             rospy.loginfo(f"Goal reached!")
-            #rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
             cmd_vel.linear.x = 0
             cmd_vel.angular.z = 0
-            self.pub.publish(cmd_vel)
+            self.cmd_pub.publish(cmd_vel)
 
 if __name__ == "__main__":
     try:
