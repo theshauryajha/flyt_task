@@ -68,8 +68,13 @@ class Turtle:
         self.cmd_pub = rospy.Publisher('turtle1/cmd_vel', Twist, queue_size=10)
         self.pose_sub = rospy.Subscriber('turtle1/pose', Pose, self.pose_callback)
 
-        # Publish goal for rqt_multiplot
-        self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
+        # Setup publishers for throttled pose
+        self.throttled_pub = rospy.Publisher('rt_real_pose', Pose, queue_size=10)
+        self.last_published_time = rospy.Time.now()
+
+        # Setup a publisher to publish noisy pose
+        self.noisy_pub = rospy.Publisher('rt_noisy_pose', Pose, queue_size=10)
+        self.noisy_pose = Pose()
 
         # Define maximum acceleration and deceleration
         self.max_linear_acceleration = 10.0
@@ -81,6 +86,20 @@ class Turtle:
     def pose_callback(self, data):
         self.current_pose = data
         self.move_to_goal()
+
+        # Publish the current pose of the turtle every 5 seconds
+        if (rospy.Time.now() - self.last_published_time).to_sec() >= 5.0:
+            self.throttled_pub.publish(self.current_pose)
+
+            # Add random Gaussian noise (std dev = 10) to the current position
+            self.noisy_pose = self.current_pose
+            self.noisy_pose.x +=  np.random.normal(0, 10)
+            self.noisy_pose.y +=  np.random.normal(0, 10)
+            self.noisy_pose.theta += np.random.normal(0, 10)
+
+            self.noisy_pub.publish(self.noisy_pose)
+
+            self.last_published_time = rospy.Time.now()
 
     def calculate_distance_error(self):
         # Euclidian Distance = ((x2-x1)^2 + (y2-y1)^2)^0.5
@@ -151,8 +170,6 @@ class Turtle:
         cmd.linear.x = velocity_local[0].item()
         cmd.linear.y = velocity_local[1].item()
         self.cmd_pub.publish(cmd)
-
-        self.goal_pub.publish(self.goal)
 
         # Check if a waypoint has been reached
         if distance_error < 0.1:
