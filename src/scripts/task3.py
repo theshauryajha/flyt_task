@@ -45,7 +45,7 @@ class Turtle:
         spawn_x, spawn_y = center_x + self.radius, center_y
         self.spawn(spawn_x, spawn_y, 0, "turtle1")
 
-        # PD - Control parameter
+        # P - Control parameter
         self.Kp = self.speed * 10.0
 
         # Generate circular waypoints

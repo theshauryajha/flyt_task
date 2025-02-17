@@ -16,6 +16,7 @@ from math import pi, sqrt, atan2, sin, cos
 import numpy as np
 from random import uniform
 
+
 class RobberTurtle:
     """
     TurtleSim turtle turtle that implements a P - Controller on the turtle's forward and strafe velocities.
@@ -50,7 +51,7 @@ class RobberTurtle:
         self.set_pen = rospy.ServiceProxy('turtle1/set_pen', SetPen)
         self.set_pen(255, 0, 0, 3, 0)
 
-        # PD - Control parameter
+        # P - Control parameter
         self.Kp = self.speed * 10.0
 
         # Generate circular waypoints
@@ -205,6 +206,7 @@ class RobberTurtle:
         cmd = Twist()
         self.cmd_pub.publish(cmd)
 
+
 class PoliceTurtle:
     """
     TurtleSim turtle that implements a PD - Controller with an external
@@ -249,9 +251,8 @@ class PoliceTurtle:
         self.max_acceleration = 1.0
         self.max_deceleration = 3.0
         
-        # Track the current time and velocity
+        # Track the current time
         self.last_time = rospy.Time.now()
-        self.current_velocity = 0.0
 
     def robber_callback(self, data):
         """Updates the last known position of the Robber Turtle (every 5 seconds)."""
@@ -369,6 +370,7 @@ class PoliceTurtle:
         self.robber.is_caught = True
         cmd = Twist()
         self.cmd_pub.publish(cmd)
+
 
 if __name__ == "__main__":
     try:
