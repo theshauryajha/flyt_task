@@ -353,7 +353,7 @@ class PoliceTurtle:
 
 if __name__ == "__main__":
     try:
-        robber_turtle = RobberTurtle(3.5, 5.0)
+        robber_turtle = RobberTurtle(3.5, 8.0)
         rospy.sleep(10)
         police_turtle = PoliceTurtle(robber_turtle)
         rospy.spin()
