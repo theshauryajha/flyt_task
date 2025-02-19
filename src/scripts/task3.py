@@ -16,18 +16,17 @@ import numpy as np
 
 class Turtle:
     """
-    TurtleSim turtle turtle that implements a P - Controller on the turtle's forward and strafe velocities.
-    Generate waypoints for a circular trajectory (at every 1 degree).
+    TurtleSim turtle turtle that implements a PD - Controller on the turtle's forward and strafe velocities.
+    Generate waypoints for a circular trajectory (at every 1 degree) with variable radius and speed.
 
     Publishes the real Pose of the turtle as well as the real Pose with a random Gaussian noise, every 5 seconds.
     """
-    def __init__(self, radius=3.5, time=3.0):
+    def __init__(self, radius=3.5, time=15.0):
         """
         Args:
             radius (float): Radius of the circular trajectory
             time (float): Time taken by the turtle to complete a circle (seconds)
         """
-
         rospy.init_node("turtle", anonymous=True)
         self.radius = radius
         self.time = time
@@ -45,10 +44,14 @@ class Turtle:
         spawn_x, spawn_y = self.center_x + self.radius, self.center_y
         self.spawn(spawn_x, spawn_y, 0, "turtle2")
 
-        # P - Control parameter
-        self.Kp = 50.0
+        # PD - Control parameters
+        self.Kp = 20.0
+        self.Kd = 1.0
 
-        # Trajectory of the circular path (x, y, t)
+        # Error Term
+        self.prev_distance_error = 0.0
+
+        # Trajectory of the circular path (x, y, time)
         self.trajectory = self.generate_trajectory()
 
         """The turtle spawns at 0th waypoint at 0 time"""
@@ -112,7 +115,7 @@ class Turtle:
         """
         Generates the trajectory of the circular path as 3-tuples: (x, y, t) where
         x, y: represent the Cartesian co-ordinates of a waypoint.
-        t: represents the time at which the waypoint is reached.
+        t: represents the time at which the waypoint needs to be reached.
 
         Returns:
             list of tuples: A list of waypoints in (x, y, t) form
@@ -162,15 +165,18 @@ class Turtle:
     
     def draw_circle(self):
         """
-        Uses the next waypoint as a goal and implements a similar P - Controller as before to move to it.
-        Once the waypoint is reached, it updates the goal to the next waypoint.
+        Uses the next waypoint as a goal and implements a PD - Controller to move to it.
+        If the turtle reaches a waypoint earlier than expected, it will wait till it is actually expected to be there.
         """
         # Calculate error
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
+        
+        # Set derivative term
+        distance_error_derivative = distance_error - self.prev_distance_error
 
         # P - Control for translation
-        target_velocity = self.Kp * distance_error
+        target_velocity = self.Kp * distance_error + self.Kd * distance_error_derivative
         
         velocity_magnitude = target_velocity
         velocity_direction = angle_error
@@ -193,15 +199,13 @@ class Turtle:
 
         # Check if the current waypoint has been reached
         if distance_error < 0.1:
-            # Calculate time taken to reach this waypoint
+            # Calculate time expected as well as time actually taken to reach this waypoint
             time_elapsed = (rospy.Time.now() - self.start_time).to_sec()
-
-            # Check if it was reached in time
             time_expected = self.trajectory[self.current_waypoint][2]
 
             rospy.loginfo(f"Reached Waypoint: {self.current_waypoint}. Time Expected: {time_expected:.2f}. Time Elapsed: {time_elapsed:.2f}")
 
-            # Check if it is the start point
+            # Reset start time upon completion of the circle
             if self.current_waypoint == 0:
                 rospy.loginfo(f"Circle completed in {time_elapsed:.2f} seconds!")
                 self.start_time = rospy.Time.now()
@@ -209,13 +213,14 @@ class Turtle:
                 if time_elapsed > time_expected:
                     rospy.logwarn(f"Reached waypoint {self.current_waypoint} late by {time_elapsed-time_expected:.2f}s!")
                 while (rospy.Time.now() - self.start_time).to_sec() <= time_expected:
+                    # If the turtle is early to this waypoint, hold it still till the time it is actually expected to be there
                     self.cmd_pub.publish(cmd) # Hold turtle still
 
+            # Update waypoint
             self.current_waypoint = (self.current_waypoint + 1) % 360
             self.goal.x = self.trajectory[self.current_waypoint][0]
             self.goal.y = self.trajectory[self.current_waypoint][1]
         
-
         cmd.linear.x = velocity_local[0].item()
         cmd.linear.y = velocity_local[1].item()
 
@@ -225,7 +230,8 @@ class Turtle:
 
 if __name__ == "__main__":
     try:
-        turtle = Turtle(3.5, 30)
+        """Use radius between 3.0 units, time more than 15 seconds"""
+        turtle = Turtle(3.0, 20.0)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
