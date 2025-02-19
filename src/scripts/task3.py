@@ -46,7 +46,7 @@ class Turtle:
         self.spawn(spawn_x, spawn_y, 0, "turtle2")
 
         # P - Control parameter
-        self.Kp = 5.0
+        self.Kp = 50.0
 
         # Trajectory of the circular path (x, y, t)
         self.trajectory = self.generate_trajectory()
@@ -190,11 +190,6 @@ class Turtle:
 
         # Create a Twist message
         cmd = Twist()
-        cmd.linear.x = velocity_local[0].item()
-        cmd.linear.y = velocity_local[1].item()
-
-        # Publish the control signals
-        self.cmd_pub.publish(cmd)
 
         # Check if the current waypoint has been reached
         if distance_error < 0.1:
@@ -211,19 +206,26 @@ class Turtle:
                 rospy.loginfo(f"Circle completed in {time_elapsed:.2f} seconds!")
                 self.start_time = rospy.Time.now()
             else:
-                if time_elapsed <= time_expected:
-                    rospy.sleep(time_expected - time_elapsed)
-                else:
-                    rospy.loginfo("Turtle not fast enough!")
+                if time_elapsed > time_expected:
+                    rospy.logwarn(f"Reached waypoint {self.current_waypoint} late by {time_elapsed-time_expected:.2f}s!")
+                while (rospy.Time.now() - self.start_time).to_sec() <= time_expected:
+                    self.cmd_pub.publish(cmd) # Hold turtle still
 
             self.current_waypoint = (self.current_waypoint + 1) % 360
             self.goal.x = self.trajectory[self.current_waypoint][0]
             self.goal.y = self.trajectory[self.current_waypoint][1]
+        
+
+        cmd.linear.x = velocity_local[0].item()
+        cmd.linear.y = velocity_local[1].item()
+
+        # Publish the control signals
+        self.cmd_pub.publish(cmd)
             
 
 if __name__ == "__main__":
     try:
-        turtle = Turtle(3.5, 37.0)
+        turtle = Turtle(3.5, 30)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
