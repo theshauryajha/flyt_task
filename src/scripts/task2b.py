@@ -106,7 +106,6 @@ class Turtle:
         Uses the next waypoint as a goal and implements a similar PD - Controller as before to move to it.
         Once the waypoint is reached, it updates the goal to the next waypoint.
         """
-
         # Calculate time delta
         current_time = rospy.Time.now()
         dt = (current_time - self.last_time).to_sec()
