@@ -45,8 +45,8 @@ class Turtle:
         self.spawn(spawn_x, spawn_y, 0, "turtle2")
 
         # PD - Control parameters
-        self.Kp = 20.0
-        self.Kd = 1.0
+        self.Kp = 15.0
+        self.Kd = 3.5
 
         # Error Term
         self.prev_distance_error = 0.0
@@ -231,7 +231,7 @@ class Turtle:
 if __name__ == "__main__":
     try:
         """Use radius between 3.0 units, time more than 15 seconds"""
-        turtle = Turtle(3.0, 20.0)
+        turtle = Turtle(3.5, 15.0)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
