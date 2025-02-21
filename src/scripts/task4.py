@@ -187,7 +187,7 @@ class RobberTurtle:
         # Set derivative term
         distance_error_derivative = distance_error - self.prev_distance_error
 
-        # P - Control for translation
+        # PD - Control for translation
         target_velocity = self.Kp * distance_error + self.Kd * distance_error_derivative
         
         velocity_magnitude = target_velocity
@@ -261,15 +261,18 @@ class PoliceTurtle:
         spawn_y = uniform(0.5, 10.5)
         self.spawn(spawn_x, spawn_y, 0, "turtle3")
 
+        rospy.loginfo(f"Police Turtle spawned at x: {spawn_x:.3f}, y: {spawn_y:.3f}")
+
         # PD - Control parameters
         self.Kp = 50.0
         self.Kd = 10.0
 
         # Error term
         self.prev_distance_error = None
+
         """
-        Initializing the tracking variable for the previous distance error as 0
-        causes the first published velocity to be unnaturally large.
+        Initializing the tracking variable for the previous distance error to zero causes the
+        first published velocity to be unnaturally large.
         """
 
         # Current pose of the Police Turtle
@@ -286,7 +289,7 @@ class PoliceTurtle:
         self.robber_sub = rospy.Subscriber('rt_real_pose', Pose, self.robber_callback)
 
         # Define acceleration and deceleration limits
-        self.acceleration_limit = 4.75
+        self.acceleration_limit = 5.0
         self.deceleration_limit = 13.5
 
         # Scale limits to compensate for negligible dt values
@@ -302,6 +305,7 @@ class PoliceTurtle:
     def robber_callback(self, data):
         """Updates the last known position of the Robber Turtle (every 5 seconds)."""
         self.robber_pose = data
+        rospy.loginfo("Robber Turtle pose recieved...")
 
     def pose_callback(self, data):
         """Updates current pose of the Police Turtle and checks if the Robber Turtle is caught."""
@@ -365,9 +369,6 @@ class PoliceTurtle:
         if dt == 0:
             return
 
-        #rospy.loginfo(f"Maximum Velocity Incrase: {self.acceleration_limit * dt}")
-        #rospy.loginfo(f"Maximum Velocity Decrease: {-self.deceleration_limit * dt}")
-
         # Calculate error
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
@@ -387,18 +388,12 @@ class PoliceTurtle:
 
         # Apply limits to change in velocity
         velocity_delta_required = target_velocity - self.current_linear_velocity
-        #rospy.loginfo(f"Required Velocity Delta: {velocity_delta_required}")
         if velocity_delta_required > 0: # acceleartion
             max_delta = self.acceleration_limit * dt
-            #if velocity_delta_required > max_delta:
-                #rospy.logwarn("Capping Acceleration!")
             velocity_delta_achieved = min(velocity_delta_required, max_delta)
         else: # deceleration
             max_delta = -self.deceleration_limit * dt
-            #if velocity_delta_required < max_delta:
-                #rospy.logwarn("Capping Deceleration!")
             velocity_delta_achieved = max(velocity_delta_required, max_delta)
-        #rospy.loginfo(f"Achieved Velocity Delta: {velocity_delta_achieved}\n\n")
 
         velocity_magnitude = self.current_linear_velocity + velocity_delta_achieved
         velocity_direction = angle_error

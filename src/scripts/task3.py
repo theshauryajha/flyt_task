@@ -175,7 +175,7 @@ class Turtle:
         # Set derivative term
         distance_error_derivative = distance_error - self.prev_distance_error
 
-        # P - Control for translation
+        # PD - Control for translation
         target_velocity = self.Kp * distance_error + self.Kd * distance_error_derivative
         
         velocity_magnitude = target_velocity
