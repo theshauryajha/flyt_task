@@ -255,18 +255,22 @@ class PoliceTurtle:
         """
         self.robber = robber_turtle
 
-        """Use the TurtleSim Spawn service to spawn a new turtle at a random position."""
+        """Use the TurtleSim Spawn service to spawn Police turtle at a random position."""
         self.spawn = rospy.ServiceProxy('spawn', Spawn)
         spawn_x = uniform(0.5, 10.5)
         spawn_y = uniform(0.5, 10.5)
         self.spawn(spawn_x, spawn_y, 0, "turtle3")
 
         # PD - Control parameters
-        self.Kp = 15.0
-        self.Kd = 15.0
+        self.Kp = 50.0
+        self.Kd = 10.0
 
         # Error term
-        self.prev_distance_error = 0.0
+        self.prev_distance_error = None
+        """
+        Initializing the tracking variable for the previous distance error as 0
+        causes the first published velocity to be unnaturally large.
+        """
 
         # Current pose of the Police Turtle
         self.current_pose = Pose()
@@ -281,9 +285,16 @@ class PoliceTurtle:
         # Setup subscriber to get the Pose of the Robber Turtle every 5 seconds
         self.robber_sub = rospy.Subscriber('rt_real_pose', Pose, self.robber_callback)
 
-        # Define maximum acceleration and deceleration
-        self.max_acceleration = 2.5
-        self.max_deceleration = 35.0
+        # Define acceleration and deceleration limits
+        self.acceleration_limit = 4.75
+        self.deceleration_limit = 13.5
+
+        # Scale limits to compensate for negligible dt values
+        self.acceleration_limit *= 1000
+        self.deceleration_limit *= 1000
+
+        # Track current linear velocity
+        self.current_linear_velocity = 0.0
         
         # Track the current time
         self.last_time = rospy.Time.now()
@@ -295,6 +306,7 @@ class PoliceTurtle:
     def pose_callback(self, data):
         """Updates current pose of the Police Turtle and checks if the Robber Turtle is caught."""
         self.current_pose = data
+        self.current_linear_velocity = self.current_pose.linear_velocity
 
         if not self.robber.is_caught and self.robber_pose is not None:
             self.chase_robber()
@@ -303,8 +315,8 @@ class PoliceTurtle:
             distance = sqrt((self.current_pose.x - self.robber.current_pose.x)** 2 +
                             (self.current_pose.y - self.robber.current_pose.y)**2)
             
-            """Stop both turtles when the Robber Turtle is caught"""
-            if distance <= 0.1:
+            """Stop both turtles when the Robber Turtle is caught (tolerance = radius * 0.1)"""
+            if distance <= 0.4:
                 self.stop()
                 self.robber.stop()
                 rospy.loginfo("Robber Turtle caught!")
@@ -353,9 +365,19 @@ class PoliceTurtle:
         if dt == 0:
             return
 
+        #rospy.loginfo(f"Maximum Velocity Incrase: {self.acceleration_limit * dt}")
+        #rospy.loginfo(f"Maximum Velocity Decrease: {-self.deceleration_limit * dt}")
+
         # Calculate error
         distance_error = self.calculate_distance_error()
         angle_error = self.calculate_angle_error()
+
+        # Handle special case for first callback
+        if self.prev_distance_error is None:
+            self.prev_distance_error = distance_error
+            self.current_linear_velocity = 0.0
+            self.last_time = rospy.Time.now()
+            return # Skip this control cycle
 
         # Set derivative term
         distance_error_derivative = distance_error - self.prev_distance_error
@@ -364,15 +386,21 @@ class PoliceTurtle:
         target_velocity = (self.Kp * distance_error + self.Kd * distance_error_derivative)
 
         # Apply limits to change in velocity
-        velocity_delta = target_velocity - self.current_pose.linear_velocity
-        if velocity_delta > 0: # acceleartion
-            max_delta = self.max_acceleration * dt
-            velocity_delta = min(velocity_delta, max_delta)
+        velocity_delta_required = target_velocity - self.current_linear_velocity
+        #rospy.loginfo(f"Required Velocity Delta: {velocity_delta_required}")
+        if velocity_delta_required > 0: # acceleartion
+            max_delta = self.acceleration_limit * dt
+            #if velocity_delta_required > max_delta:
+                #rospy.logwarn("Capping Acceleration!")
+            velocity_delta_achieved = min(velocity_delta_required, max_delta)
         else: # deceleration
-            max_delta = -self.max_deceleration * dt
-            velocity_delta = max(velocity_delta, max_delta)
+            max_delta = -self.deceleration_limit * dt
+            #if velocity_delta_required < max_delta:
+                #rospy.logwarn("Capping Deceleration!")
+            velocity_delta_achieved = max(velocity_delta_required, max_delta)
+        #rospy.loginfo(f"Achieved Velocity Delta: {velocity_delta_achieved}\n\n")
 
-        velocity_magnitude = self.current_pose.linear_velocity + velocity_delta
+        velocity_magnitude = self.current_linear_velocity + velocity_delta_achieved
         velocity_direction = angle_error
 
         velocity_global = np.array([
@@ -408,7 +436,7 @@ class PoliceTurtle:
 
 if __name__ == "__main__":
     try:
-        robber_turtle = RobberTurtle()
+        robber_turtle = RobberTurtle(4.0, 15.0)
         rospy.sleep(10)
         police_turtle = PoliceTurtle(robber_turtle)
         rospy.spin()
