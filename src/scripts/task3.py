@@ -10,7 +10,7 @@ import rospy
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill
-from math import pi, sqrt, atan2, sin, cos
+from math import sin, cos
 import numpy as np
 from flyt_task import utils
 
