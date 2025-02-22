@@ -12,6 +12,7 @@ from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill
 from math import pi, sqrt, atan2, sin, cos
 import numpy as np
+from flyt_task import utils
 
 
 class Turtle:
@@ -37,11 +38,9 @@ class Turtle:
         self.kill = rospy.ServiceProxy('kill', Kill)
         self.spawn = rospy.ServiceProxy('spawn', Spawn)
         self.kill("turtle1")
-
-        self.center_x, self.center_y = 5.5, 5.5 # Center of TurtleSim frame
         
         # Spawn at (center_x + radius, center_y)
-        spawn_x, spawn_y = self.center_x + self.radius, self.center_y
+        spawn_x, spawn_y = 5.5 + self.radius, 5.5
         self.spawn(spawn_x, spawn_y, 0, "turtle2")
 
         # PD - Control parameters
@@ -52,7 +51,7 @@ class Turtle:
         self.prev_distance_error = 0.0
 
         # Trajectory of the circular path (x, y, time)
-        self.trajectory = self.generate_trajectory()
+        self.trajectory = utils.generate_circular_trajectory(self.time, self.radius)
 
         """The turtle spawns at 0th waypoint at 0 time"""
 
@@ -111,66 +110,14 @@ class Turtle:
 
             self.last_published_time = rospy.Time.now()
     
-    def generate_trajectory(self):
-        """
-        Generates the trajectory of the circular path as 3-tuples: (x, y, t) where
-        x, y: represent the Cartesian co-ordinates of a waypoint.
-        t: represents the time at which the waypoint needs to be reached.
-
-        Returns:
-            list of tuples: A list of waypoints in (x, y, t) form
-        """
-        time_steps = np.linspace(0, self.time, num=360, endpoint=False)
-        trajectory = []
-        for i in range (360):
-            angle = i * (2 * pi / 360)
-            x = self.center_x + self.radius * cos(angle)
-            y = self.center_y + self.radius * sin(angle)
-            t = time_steps[i]
-
-            trajectory.append((x, y, t))
-            rospy.loginfo(f"Waypoint {i}: x={x:.3f}, y={y:.3f}, time={t:.3f}")
-    
-        return trajectory
-
-    def calculate_distance_error(self):
-        """
-        Calculates the Euclidian distance between the goal and current position of the turtle.
-        Returns:
-            float: Current distance error
-        """
-        return sqrt((self.goal.x - self.current_pose.x)**2 + (self.goal.y - self.current_pose.y)**2)
-    
-    def calculate_angle_error(self):
-        """
-        Calculates the smallest angular error between the current heading of the turtle and direction to the goal.
-        Returns:
-            float: Smallest angle difference (in radians)
-        """
-        desired_angle = atan2((self.goal.y - self.current_pose.y), (self.goal.x - self.current_pose.x))
-        angle_error = desired_angle - self.current_pose.theta
-
-        # Normalise angle
-        return self.wrap_angle(angle_error)
-    
-    def wrap_angle(self, theta):
-        """
-        Normalizes angle to range [-pi, pi]
-        Args:
-            theta (float): Angle to be normalized
-        Returns:
-            float: Normalized angle
-        """
-        return atan2(sin(theta), cos(theta))
-    
     def draw_circle(self):
         """
         Uses the next waypoint as a goal and implements a PD - Controller to move to it.
         If the turtle reaches a waypoint earlier than expected, it will wait till it is actually expected to be there.
         """
         # Calculate error
-        distance_error = self.calculate_distance_error()
-        angle_error = self.calculate_angle_error()
+        distance_error = utils.calculate_distance(self.goal, self.current_pose)
+        angle_error = utils.calculate_angle(self.goal, self.current_pose)
         
         # Set derivative term
         distance_error_derivative = distance_error - self.prev_distance_error
@@ -187,7 +134,7 @@ class Turtle:
         ])
 
         # Transform to local frame
-        orientation = self.wrap_angle(self.current_pose.theta)
+        orientation = utils.wrap_angle(self.current_pose.theta)
         rotation_matrix = np.array([
             [cos(orientation), sin(orientation)],
             [-sin(orientation), cos(orientation)]

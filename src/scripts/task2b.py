@@ -12,6 +12,7 @@ from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill
 from math import sqrt, atan2, sin, cos
 import numpy as np
+from flyt_task import utils
 
 
 class Turtle:
@@ -70,36 +71,6 @@ class Turtle:
         """
         self.current_pose = data
         self.draw_pattern()
-
-    def calculate_distance_error(self):
-        """
-        Calculates the Euclidian distance between the goal and current position of the turtle.
-        Returns:
-            float: Current distance error
-        """
-        return sqrt((self.goal.x - self.current_pose.x)**2 + (self.goal.y - self.current_pose.y)**2)
-    
-    def calculate_angle_error(self):
-        """
-        Calculates the smallest angular error between the current heading of the turtle and direction to the goal.
-        Returns:
-            float: Smallest angle difference (in radians)
-        """
-        desired_angle = atan2((self.goal.y - self.current_pose.y), (self.goal.x - self.current_pose.x))
-        angle_error = desired_angle - self.current_pose.theta
-
-        # Normalise angle
-        return self.wrap_angle(angle_error)
-    
-    def wrap_angle(self, theta):
-        """
-        Normalizes angle to range [-pi, pi]
-        Args:
-            theta (float): Angle to be normalized
-        Returns:
-            float: Normalized angle
-        """
-        return atan2(sin(theta), cos(theta))
     
     def draw_pattern(self):
         """
@@ -115,8 +86,8 @@ class Turtle:
             return
 
         # Calculate error
-        distance_error = self.calculate_distance_error()
-        angle_error = self.calculate_angle_error()
+        distance_error = utils.calculate_distance(self.goal, self.current_pose)
+        angle_error = utils.calculate_angle(self.goal, self.current_pose)
 
         # Set derivative term
         distance_error_derivative = distance_error - self.prev_distance_error
@@ -142,7 +113,7 @@ class Turtle:
         ])
 
         # Transform to local frame
-        orientation = self.wrap_angle(self.current_pose.theta)
+        orientation = utils.wrap_angle(self.current_pose.theta)
         rotation_matrix = np.array([
             [cos(orientation), sin(orientation)],
             [-sin(orientation), cos(orientation)]
