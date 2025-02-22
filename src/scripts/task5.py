@@ -198,9 +198,9 @@ class RobberTurtle:
             self.current_waypoint = (self.current_waypoint + 1) % 360
             self.goal.x = self.trajectory[self.current_waypoint][0]
             self.goal.y = self.trajectory[self.current_waypoint][1]
-        
-        cmd.linear.x = velocity_local[0].item()
-        cmd.linear.y = velocity_local[1].item()
+
+        # Rotate the global velocity vector to the Turtle's local frame
+        cmd = utils.rotate_velocity_vector(velocity_magnitude, velocity_direction, self.current_pose.theta)
 
         # Publish the control signals
         self.cmd_pub.publish(cmd)
@@ -343,23 +343,8 @@ class PoliceTurtle:
         max_velocity = self.robber.current_pose.linear_velocity * 0.5 # 1/2 * current RT velocity
         velocity_magnitude = min(velocity_magnitude, max_velocity)
 
-        velocity_global = np.array([
-            [velocity_magnitude * cos(velocity_direction)],
-            [velocity_magnitude * sin(velocity_direction)]
-        ])
-
-        # Transform to local frame
-        orientation = utils.wrap_angle(self.current_pose.theta)
-        rotation_matrix = np.array([
-            [cos(orientation), sin(orientation)],
-            [-sin(orientation), cos(orientation)]
-        ])
-        velocity_local = rotation_matrix @ velocity_global
-
-        # Create a Twist message
-        cmd = Twist()
-        cmd.linear.x = velocity_local[0].item()
-        cmd.linear.y = velocity_local[1].item()
+        # Rotate the global velocity vector to the Turtle's local frame
+        cmd = utils.rotate_velocity_vector(velocity_magnitude, velocity_direction, self.current_pose.theta)
 
         # Publish the control signals
         self.cmd_pub.publish(cmd)

@@ -1,7 +1,8 @@
 import rospy
 from turtlesim.msg import Pose
+from geometry_msgs.msg import Twist
 from math import sqrt, atan2, sin, cos, pi
-from numpy import linspace
+import numpy as np
 
 def calculate_distance(goal_pose, current_pose):
     """
@@ -52,7 +53,7 @@ def generate_circular_trajectory(time, radius):
     Returns:
         list of tuples: A list of waypoints in (x, y, t) form
     """
-    time_steps = linspace(0, time, num=360, endpoint=False)
+    time_steps = np.linspace(0, time, num=360, endpoint=False)
     trajectory = []
     for i in range (360):
         angle = i * (2 * pi / 360)
@@ -63,3 +64,33 @@ def generate_circular_trajectory(time, radius):
         trajectory.append((x, y, t))
 
     return trajectory
+
+def rotate_velocity_vector(magnitude, direction, current_theta):
+    """
+    Rotates a velocity vector from a global frame to a Turtle's local frame.
+    Args:
+        magnitude (float): Magnitude of the velocity vector
+        direction (float): Direction of the velocity vector
+    Returns:
+        Twist: Command velocity in the Turtle's local frame
+    """
+    velocity_global = np.array([
+            [magnitude * cos(direction)],
+            [magnitude * sin(direction)]
+        ])
+    
+    orientation = wrap_angle(current_theta)
+
+    rotation_matrix = np.array([
+            [cos(orientation), sin(orientation)],
+            [-sin(orientation), cos(orientation)]
+        ])
+    
+    velocity_local = rotation_matrix @ velocity_global
+
+    # Create a Twist message
+    cmd = Twist()
+    cmd.linear.x = velocity_local[0].item()
+    cmd.linear.y = velocity_local[1].item()
+
+    return cmd
