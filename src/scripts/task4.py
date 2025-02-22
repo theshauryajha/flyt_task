@@ -12,8 +12,6 @@ import rospy
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen
-from math import sin, cos
-import numpy as np
 from random import uniform
 from flyt_task import utils
 
@@ -114,11 +112,7 @@ class RobberTurtle:
             self.throttled_pub.publish(self.current_pose)
 
             # Add random Gaussian noise (std dev = 10) to the current position
-            self.noisy_pose = self.current_pose
-            self.noisy_pose.x +=  np.random.normal(0, 10)
-            self.noisy_pose.y +=  np.random.normal(0, 10)
-            self.noisy_pose.theta += np.random.normal(0, 10)
-
+            self.noisy_pose = utils.add_random_noise(self.current_pose)
             self.noisy_pub.publish(self.noisy_pose)
 
             self.last_published_time = rospy.Time.now()
@@ -140,19 +134,6 @@ class RobberTurtle:
         
         velocity_magnitude = target_velocity
         velocity_direction = angle_error
-
-        velocity_global = np.array([
-            [velocity_magnitude * cos(velocity_direction)],
-            [velocity_magnitude * sin(velocity_direction)]
-        ])
-
-        # Transform to local frame
-        orientation = utils.wrap_angle(self.current_pose.theta)
-        rotation_matrix = np.array([
-            [cos(orientation), sin(orientation)],
-            [-sin(orientation), cos(orientation)]
-        ])
-        velocity_local = rotation_matrix @ velocity_global
 
         # Create a Twist message
         cmd = Twist()

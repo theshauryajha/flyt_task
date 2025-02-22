@@ -10,8 +10,6 @@ import rospy
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill
-from math import sin, cos
-import numpy as np
 from flyt_task import utils
 
 
@@ -101,11 +99,7 @@ class Turtle:
             self.throttled_pub.publish(self.current_pose)
 
             # Add random Gaussian noise (std dev = 10) to the current position
-            self.noisy_pose = self.current_pose
-            self.noisy_pose.x +=  np.random.normal(0, 10)
-            self.noisy_pose.y +=  np.random.normal(0, 10)
-            self.noisy_pose.theta += np.random.normal(0, 10)
-
+            self.noisy_pose = utils.add_random_noise(self.current_pose)
             self.noisy_pub.publish(self.noisy_pose)
 
             self.last_published_time = rospy.Time.now()

@@ -94,3 +94,18 @@ def rotate_velocity_vector(magnitude, direction, current_theta):
     cmd.linear.y = velocity_local[1].item()
 
     return cmd
+
+def add_random_noise(current_pose):
+    """
+    Adds random Gaussian noise with standard deviation 10 to given Pose data.
+    Args:
+        current_pose (Pose): Current Pose of the turtle
+    Returns:
+        Pose: Pose message with random Gaussian noise added to the original Pose data
+    """
+    noisy_pose = current_pose
+    noisy_pose.x +=  np.random.normal(0, 10)
+    noisy_pose.y +=  np.random.normal(0, 10)
+    noisy_pose.theta += np.random.normal(0, 10)
+
+    return noisy_pose

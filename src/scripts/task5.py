@@ -12,8 +12,6 @@ import rospy
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen
-from math import pi, sin, cos
-import numpy as np
 from random import uniform
 from flyt_task import utils
 
@@ -116,35 +114,10 @@ class RobberTurtle:
             self.throttled_pub.publish(self.current_pose)
 
             # Add random Gaussian noise (std dev = 10) to the current position
-            self.noisy_pose = self.current_pose
-            self.noisy_pose.x +=  np.random.normal(0, 10)
-            self.noisy_pose.y +=  np.random.normal(0, 10)
-            self.noisy_pose.theta += np.random.normal(0, 10)
-
+            self.noisy_pose = utils.add_random_noise(self.current_pose)
             self.noisy_pub.publish(self.noisy_pose)
 
             self.last_published_time = rospy.Time.now()
-    
-    def generate_trajectory(self):
-        """
-        Generates the trajectory of the circular path as 3-tuples: (x, y, t) where
-        x, y: represent the Cartesian co-ordinates of a waypoint.
-        t: represents the time at which the waypoint needs to be reached.
-
-        Returns:
-            list of tuples: A list of waypoints in (x, y, t) form
-        """
-        time_steps = np.linspace(0, self.time, num=360, endpoint=False)
-        trajectory = []
-        for i in range (360):
-            angle = i * (2 * pi / 360)
-            x = self.center_x + self.radius * cos(angle)
-            y = self.center_y + self.radius * sin(angle)
-            t = time_steps[i]
-
-            trajectory.append((x, y, t))
-    
-        return trajectory
     
     def draw_circle(self):
         """
@@ -163,19 +136,6 @@ class RobberTurtle:
         
         velocity_magnitude = target_velocity
         velocity_direction = angle_error
-
-        velocity_global = np.array([
-            [velocity_magnitude * cos(velocity_direction)],
-            [velocity_magnitude * sin(velocity_direction)]
-        ])
-
-        # Transform to local frame
-        orientation = utils.wrap_angle(self.current_pose.theta)
-        rotation_matrix = np.array([
-            [cos(orientation), sin(orientation)],
-            [-sin(orientation), cos(orientation)]
-        ])
-        velocity_local = rotation_matrix @ velocity_global
 
         # Create a Twist message
         cmd = Twist()

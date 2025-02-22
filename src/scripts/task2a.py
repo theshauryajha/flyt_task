@@ -2,13 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import rospy
-from std_msgs.msg import Float64
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen, TeleportAbsolute
 from random import uniform
-from math import pi, sin, cos
-import numpy as np
+from math import pi
 from flyt_task import utils
 
 
