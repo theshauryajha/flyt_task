@@ -59,7 +59,7 @@ class RobberTurtle:
         self.prev_distance_error = 0.0
 
         # Trajectory of the circular path (x, y, time)
-        self.trajectory = self.generate_trajectory()
+        self.trajectory = utils.generate_circular_trajectory(self.time, self.radius)
 
         """The turtle spawns at 0th waypoint at 0 time"""
 
