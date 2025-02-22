@@ -13,6 +13,7 @@ from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from turtlesim.srv import Spawn, Kill, SetPen
 from random import uniform
+from math import pi
 from flyt_task import utils
 
 
@@ -199,7 +200,7 @@ class PoliceTurtle:
 
         # PD - Control parameters
         self.Kp = 50.0
-        self.Kd = 10.0
+        self.Kd = 5.0
 
         # Error term
         self.prev_distance_error = None
@@ -211,6 +212,16 @@ class PoliceTurtle:
 
         # Current pose of the Police Turtle
         self.current_pose = Pose()
+
+        # Limit the velocity of the Police Turtle
+        self.max_velocity = 2 * pi * self.robber.radius / self.robber.time
+
+        # Point at which intercept is attempted
+        self.goal = None
+        while self.goal is None:
+            rospy.logwarn("Couldn't find intercept point! Checking again...")
+            self.goal = self.find_optimal_intercept()
+        rospy.loginfo(f"Optimal intercept found at x={self.goal.x:.3f}, y={self.goal.y:.3f}")
 
         # Track the last known pose of the Robber Turtle
         self.robber_pose = None
@@ -257,6 +268,40 @@ class PoliceTurtle:
                 self.stop()
                 self.robber.stop()
                 rospy.loginfo("Robber Turtle caught!")
+
+    def estimate_intercept(self, target_point, target_time):
+        current_time = rospy.Time.now()
+
+        if self.max_velocity <= 0:
+            return None
+        
+        distance_to_target = utils.calculate_distance(target_point, self.current_pose)
+        time_needed = distance_to_target / self.max_velocity
+
+        pt_arrival = current_time + rospy.Duration(time_needed)
+        rt_arrival = self.robber.start_time + rospy.Duration(target_time)
+
+        if abs((pt_arrival - rt_arrival).to_sec()) <= 0.01:
+            return max(pt_arrival, rt_arrival)
+        
+        return None
+    
+    def find_optimal_intercept(self):
+        current_time = rospy.Time.now()
+        best_intercept = None
+        best_intercept_time = current_time + rospy.Duration(15) # Catch within 15 seconds
+
+        for x, y, t, in self.robber.trajectory:
+            if current_time < (self.robber.start_time + rospy.Duration(t)):
+                target_point = Pose()
+                target_point.x, target_point.y = x, y
+
+                intercept_time = self.estimate_intercept(target_point, t)
+                if intercept_time is not None and intercept_time < best_intercept_time:
+                    best_intercept = target_point
+                    best_intercept_time = intercept_time
+
+        return best_intercept
     
     def chase_robber(self):
         """
@@ -272,8 +317,8 @@ class PoliceTurtle:
             return
 
         # Calculate error
-        distance_error = utils.calculate_distance(self.robber_pose, self.current_pose)
-        angle_error = utils.calculate_angle(self.robber_pose, self.current_pose)
+        distance_error = utils.calculate_distance(self.goal, self.current_pose)
+        angle_error = utils.calculate_angle(self.goal, self.current_pose)
 
         # Handle special case for first callback
         if self.prev_distance_error is None:
@@ -300,14 +345,21 @@ class PoliceTurtle:
         velocity_magnitude = self.current_linear_velocity + velocity_delta_achieved
         velocity_direction = angle_error
 
-        max_velocity = self.robber.current_pose.linear_velocity * 0.5 # 1/2 * current RT velocity
-        velocity_magnitude = min(velocity_magnitude, max_velocity)
+        velocity_magnitude = max(min(velocity_magnitude, self.max_velocity), 0.1)
 
         # Rotate the global velocity vector to the Turtle's local frame
         cmd = utils.rotate_velocity_vector(velocity_magnitude, velocity_direction, self.current_pose.theta)
 
         # Publish the control signals
         self.cmd_pub.publish(cmd)
+
+        if distance_error < 0.25:
+            rospy.logwarn("Couldn't catch turtle, re-calculating optimal intercept point...")
+            self.goal = None
+            while self.goal is None:
+                rospy.logwarn("Couldn't find intercept! Checking again...")
+                self.goal = self.find_optimal_intercept()
+            rospy.loginfo(f"Optimal intercept found at x={self.goal.x:.3f}, y={self.goal.y:.3f}")
 
     def stop(self):
         """
