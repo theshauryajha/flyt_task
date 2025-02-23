@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-Implement the same controller as in Goal 2(a).
-Use this controller to draw a grid pattern.
+Extension of the Controller implemented in Goal 2(a).
+Uses a set of waypoints as goals to draw a grid pattern on
+the TurtleSim frame.
 """
 
 import rospy
@@ -15,11 +16,17 @@ from flyt_task import utils
 
 class Turtle:
     """
-    TurtleSim turtle that implements an external acceleration and deceleartion profile.
-    This profile is implemented by limiting how aggressively the turtle can change its velocity.
+    A controller for TurtleSim turtles using PD - control with velocity profiling.
 
-    Implements a PD - Controller to move to the next waypoint using forward and/or strafe velocities.
+    This class implements a control system that guides a turtle to a goal position
+    using a PD - Controller. The controller includes acceleration and deceleration
+    profiles to ensure smooth motion. The resulting velocity vector is decomposed
+    into the turtle's local frame for forward and strafe control.
+
+    Uses a set of waypoints arranged in a lawnmower pattern as goals to create
+    a grid-like coverage of the workspace.
     """
+
     def __init__(self):
         rospy.init_node("turtle", anonymous=True)
 
@@ -29,43 +36,48 @@ class Turtle:
         self.kill = rospy.ServiceProxy('kill', Kill)
         self.spawn = rospy.ServiceProxy('spawn', Spawn)
         self.kill("turtle1")
-        self.spawn(1.0, 1.0, 0.0, "turtle1")
+        self.spawn(1.0, 1.0, 0.0, "turtle2")
 
         # PD - Control parameters
         self.Kp = 1.25
-        self.Kd = 2.3
+        self.Kd = 2.5
 
         # Error term
         self.prev_distance_error = 0.0
 
-        # Define waypoints for the lawnmower pattern
-        self.waypoints = [(1,1), (10,1), (10,4), (1,4), (1,7), (10,7), (10,10), (1,10)]
+        """Waypoints for lawnmower grid pattern"""
+        self.waypoints = [(10,1), (10,4), (1,4), (1,7), (10,7), (10,10), (1,10)]
 
         # Track next waypoint
-        self.next_waypoint = 0
+        self.current_waypoint = 0
 
-        # Goal pose to be initialized as first waypoint
+        # Initialize goal as the first waypoint
         self.goal = Pose()
-        self.goal.x, self.goal.y = self.waypoints[self.next_waypoint]
+        self.goal.x, self.goal.y = self.waypoints[self.current_waypoint]
 
         # Current pose data
         self.current_pose = Pose()
 
-        # Setup publisher and subscriber for pose and command velocity
-        self.cmd_pub = rospy.Publisher('turtle1/cmd_vel', Twist, queue_size=10)
-        self.pose_sub = rospy.Subscriber('turtle1/pose', Pose, self.pose_callback)
+        # Publisher for command velocity
+        self.cmd_pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
+
+        # Subscriber for pose
+        self.pose_sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
 
         # Define maximum acceleration and deceleration
-        self.max_acceleration = 1.0
-        self.max_deceleration = 1.0
+        self.max_acceleration = 3.0
+        self.max_deceleration = 3.0
 
         # Track the current time
         self.last_time = rospy.Time.now()
 
-    def pose_callback(self, data):
+    def pose_callback(self, data: Pose):
         """
         Updates current pose from TurtleSim pose message.
         Calls the controller function for the current pose.
+
+        Args:
+            data (Pose): incoming pose data from TurtleSim
         """
         self.current_pose = data
         self.draw_pattern()
@@ -94,15 +106,13 @@ class Turtle:
         target_velocity = (self.Kp * distance_error + self.Kd * distance_error_derivative)
 
         # Apply limits to change in velocity
-        velocity_delta = target_velocity - self.current_pose.linear_velocity
-        if velocity_delta > 0: # acceleartion
-            max_delta = self.max_acceleration * dt
-            velocity_delta = min(velocity_delta, max_delta)
-        else: # deceleration
-            max_delta = self.max_deceleration * dt
-            velocity_delta = max(velocity_delta, -max_delta)
+        velocity_delta_achieved = utils.limit_velocity_delta(target_velocity,
+                                                             self.current_pose.linear_velocity,
+                                                             self.max_acceleration,
+                                                             self.max_deceleration,
+                                                             dt)
 
-        velocity_magnitude = self.current_pose.linear_velocity + velocity_delta
+        velocity_magnitude = self.current_pose.linear_velocity + velocity_delta_achieved
         velocity_direction = angle_error
 
         # Rotate the global velocity vector to the Turtle's local frame
@@ -113,13 +123,17 @@ class Turtle:
 
         # Check if a waypoint has been reached
         if distance_error < 0.01:
-            self.next_waypoint += 1
-            if self.next_waypoint < len(self.waypoints):
+            self.current_waypoint += 1
+
+            if self.current_waypoint < len(self.waypoints):
+                rospy.loginfo(f"Waypoint reached: x={self.goal.x: .2f}, y={self.goal.y:.2f}")
+
                 # If there is another waypoint, update the goal
-                self.goal.x, self.goal.y = self.waypoints[self.next_waypoint]
+                self.goal.x, self.goal.y = self.waypoints[self.current_waypoint]
+
             else:
                 # If this is the last waypoint, stop the turtle
-                rospy.loginfo("Pattern completed!")
+                rospy.loginfo_once("Pattern completed!")
                 cmd.linear.x = 0
                 cmd.angular.z = 0
                 self.cmd_pub.publish(cmd)

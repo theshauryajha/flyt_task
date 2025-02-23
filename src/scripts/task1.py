@@ -13,12 +13,14 @@ from flyt_task import utils
 
 class Turtle:
     """
-    TurtleSim turtle using two separate P - Controllers for position and orientation.
-    Implements a control loop that moves the turtle to a goal position using velocity commands,
-    by first rotating and then translating towards it.
+    A controller for TurtleSim turtles using proportional control.
 
-    Position control determines linear velocity, while orientation control determines angular velocity.
+    This class implements a control system that guides a turtle to a goal position
+    using two separate P - Controllers: one for position and one for orientation.
+    The controller first rotates the turtle to face the goal, then moves it
+    forward using velocity commands.
     """
+
     def __init__(self):
         rospy.init_node("turtle", anonymous=True)
 
@@ -45,19 +47,22 @@ class Turtle:
         # Current pose data
         self.current_pose = Pose()
 
-        # Setup publisher and subscriber for pose and command velocity
+        # Publisher for command velocity
         self.cmd_pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
+
+        # Subscriber for pose
         self.pose_sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
 
-        # Setup publishers to use rqt_mutliplot
-        self.distance_error_pub = rospy.Publisher('/turtle2/distance_error', Float64, queue_size=10)
-        self.angle_error_pub = rospy.Publisher('/turtle2/angle_error', Float64, queue_size=10)
+        # Publish goal for rqt_multiplot
         self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
 
-    def pose_callback(self, data):
+    def pose_callback(self, data: Pose):
         """
         Updates current pose from TurtleSim pose message.
         Calls the controller function for the current pose.
+
+        Args:
+            data (Pose): incoming pose data from TurtleSim
         """
         self.current_pose = data
         self.move_to_goal()
@@ -72,14 +77,19 @@ class Turtle:
             # Set pen color -> red
             self.set_pen(255, 0, 0, 3, 0)
 
+            marker_points = [
+                (6, 6, pi/4),
+                (5, 5, pi/4),
+                (5.5, 5.5, pi/4),
+                (6, 5, -pi/4),
+                (5, 6, -pi/4),
+                (5.5, 5.5, -pi/4)
+            ]
+
             # Draw the marker
-            self.teleport(6, 6, pi/4)
-            self.teleport(5, 5, pi/4)
-            self.teleport(5.5, 5.5, pi/4)
-            self.teleport(6, 5, -pi/4)
-            self.teleport(5, 6, -pi/4)
-            self.teleport(5.5, 5.5, -pi/4)
-            rospy.sleep(0.5)
+            for x, y, theta in marker_points:
+                self.teleport(x, y, theta)
+                rospy.sleep(0.1)
 
             # Kill the turtle after marking the goal
             rospy.loginfo("Goal marked; killing default turtle...")
@@ -103,13 +113,20 @@ class Turtle:
             self.spawn(x, y, theta, "turtle2")
             rospy.loginfo(f"Spawned turtle at x:{x:.2f}, y:{y:.2f}, theta:{theta:.2f}")
             rospy.sleep(0.5)
+
         except rospy.ServiceException as e:
             rospy.logerr(f"Failed to spawn turtle: {e}")
     
     def move_to_goal(self):
         """
-        Implements a P - Controller for angular velocity for the turtle to face the goal,
-        then implements a separate P - Controller for linear velocity to move to the goal.
+        Execute the control loop to move the turtle to the goal.
+
+        Implements two P - Controllers:
+        1. Angular velocity control to face the goal
+        2. Linear velocity control to move to the goal
+
+        This ensures proper orientation of the turtle (threshold = 1degree)
+        before moving forward (accuracy = 0.01 units).
         """
         # Calculate error
         distance_error = utils.calculate_distance(self.goal, self.current_pose)
@@ -119,37 +136,35 @@ class Turtle:
         angular_velocity = self.Kp_angular * angle_error
 
         # Create a Twist message
-        cmd_vel = Twist()
+        cmd = Twist()
 
         # Threshold of 1deg for precise rotation
         if abs(angle_error) > (pi / 180):
-            cmd_vel.angular.z = angular_velocity
-            cmd_vel.linear.x = 0
+            cmd.angular.z = angular_velocity
+            cmd.linear.x = 0
+
         else:
             self.angle_error_integral = 0
             self.prev_angle_error = 0
-            cmd_vel.angular.z = 0
+            cmd.angular.z = 0
 
             # P - Control for translation
             linear_velocity = self.Kp_linear * distance_error
-            cmd_vel.linear.x = linear_velocity
+            cmd.linear.x = linear_velocity
 
         # Publish control signals and log current pose data
-        self.cmd_pub.publish(cmd_vel)
+        self.cmd_pub.publish(cmd)
         rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
 
-        # Plot errors and goal
-        self.distance_error_pub.publish(Float64(distance_error))
-        self.angle_error_pub.publish(Float64(angle_error))
+        # Publish goal for plotting
         self.goal_pub.publish(self.goal)
 
         # Stop at goal and log progress
         # Threshold of 0.01 units for accuracy
         if distance_error < 0.01:
-            rospy.loginfo(f"Goal reached!")
-            cmd_vel.linear.x = 0
-            cmd_vel.angular.z = 0
-            self.cmd_pub.publish(cmd_vel)
+            cmd = Twist()
+            self.cmd_pub.publish(cmd)
+            rospy.loginfo_once(f"Goal reached!")
 
 
 if __name__ == "__main__":

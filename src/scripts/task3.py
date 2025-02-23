@@ -1,11 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-"""
-Move a TurtleSim turtle in a circular trajectory around the center of the TurtleSim frame.
-Provide variables to control radius and speed of the turtle.
-"""
-
 import rospy
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
@@ -15,15 +10,27 @@ from flyt_task import utils
 
 class Turtle:
     """
-    TurtleSim turtle turtle that implements a PD - Controller on the turtle's forward and strafe velocities.
-    Generate waypoints for a circular trajectory (at every 1 degree) with variable radius and speed.
+    A controller for TurtleSim turtles using PD - control with velocity profiling.
 
-    Publishes the real Pose of the turtle as well as the real Pose with a random Gaussian noise, every 5 seconds.
+    This class implements a control system that guides a turtle to a goal position
+    using a PD - Controller. The resulting velocity vector is decomposed
+    into the turtle's local frame for forward and strafe control.
+
+    A trajectory is generated as a list of timed waypoints (x, y, t), where
+    the Turtle is expected to reach waypoint (x, y) at time t relative to the
+    time it starts the circular trajectory.
+
+    Ensures that the circular trajectory of a given radius is completed
+    in a given time.
+
+    This class also uses throttling to publish the actual and noisy Pose data
+    of the Turtle every 5 seconds.
     """
+
     def __init__(self, radius=3.5, time=15.0):
         """
         Args:
-            radius (float): Radius of the circular trajectory
+            radius (float): Radius of the circular trajectory (TurtleSim coordinate units)
             time (float): Time taken by the turtle to complete a circle (seconds)
         """
         rospy.init_node("turtle", anonymous=True)
@@ -51,15 +58,15 @@ class Turtle:
         # Trajectory of the circular path (x, y, time)
         self.trajectory = utils.generate_circular_trajectory(self.time, self.radius)
 
-        """The turtle spawns at 0th waypoint at 0 time"""
-
         # Track start time of drawing
         self.start_time = None
+
+        """The turtle spawns at the 0th waypoint at 0 time."""
 
         # Track next waypoint
         self.current_waypoint = 1
         
-        # Goal pose to be initialized as first waypoint
+        # Initialize goal as the first waypoint
         self.goal = Pose()
         self.goal.x = self.trajectory[1][0]
         self.goal.y = self.trajectory[1][1]
@@ -67,24 +74,29 @@ class Turtle:
         # Current pose data
         self.current_pose = Pose()
 
-        # Setup publisher and subscriber for pose and command velocity
+        # Publisher for command velocity
         self.cmd_pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
+
+        # Subscriber for pose
         self.pose_sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
 
-        # Setup publishers for throttled pose
+        # Setup a publisher for real pose (throttled)
         self.throttled_pub = rospy.Publisher('rt_real_pose', Pose, queue_size=10)
         self.last_published_time = rospy.Time.now()
 
-        # Setup a publisher to publish noisy pose
+        # Setup a publisher for noisy pose (throttled)
         self.noisy_pub = rospy.Publisher('rt_noisy_pose', Pose, queue_size=10)
         self.noisy_pose = Pose()
 
-    def pose_callback(self, data):
+    def pose_callback(self, data: Pose):
         """
         Updates current pose from TurtleSim pose message.
         Calls the controller function for the current pose.
 
         Publishes the real Pose and the noisy Pose every 5 seconds.
+
+        Args:
+            data (Pose): incoming pose data from TurtleSim
         """
         self.current_pose = data
 
@@ -106,7 +118,9 @@ class Turtle:
     
     def draw_circle(self):
         """
-        Uses the next waypoint as a goal and implements a PD - Controller to move to it.
+        Uses the next waypoint as a goal and implements a similar PD - Controller as before to move to it.
+        Once the waypoint is reached, it updates the goal to the next waypoint.
+
         If the turtle reaches a waypoint earlier than expected, it will wait till it is actually expected to be there.
         """
         # Calculate error
@@ -137,14 +151,16 @@ class Turtle:
             if self.current_waypoint == 0:
                 rospy.loginfo(f"Circle completed in {time_elapsed:.2f} seconds!")
                 self.start_time = rospy.Time.now()
+
             else:
                 if time_elapsed > time_expected:
                     rospy.logwarn(f"Reached waypoint {self.current_waypoint} late by {time_elapsed-time_expected:.2f}s!")
+                    
                 while (rospy.Time.now() - self.start_time).to_sec() <= time_expected:
                     # If the turtle is early to this waypoint, hold it still till the time it is actually expected to be there
                     self.cmd_pub.publish(cmd) # Hold turtle still
 
-            # Update waypoint
+            """Update waypoint and continue circular trajectory infinitely."""
             self.current_waypoint = (self.current_waypoint + 1) % 360
             self.goal.x = self.trajectory[self.current_waypoint][0]
             self.goal.y = self.trajectory[self.current_waypoint][1]
@@ -158,7 +174,7 @@ class Turtle:
 
 if __name__ == "__main__":
     try:
-        """Use radius between 3.0 units, time more than 15 seconds"""
+        """Use radius greater 3.0 units, time more than 15 seconds"""
         turtle = Turtle(3.5, 15.0)
         rospy.spin()
     except rospy.ROSInterruptException:

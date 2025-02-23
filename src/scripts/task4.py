@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Create a chase simulation with Robber and Police turtles in TurtleSim.
+This module simulates a chase between a Robber Turtle and a Police Turtle.
+
 The Robber Turtle moves in a circular trajectory as in Goal 3.
 The Police Turtle spawns after 10 seconds at a random position and chases the Robber Turtle.
-The Police Turtle receives the real pose of the Robber Turtle every 5 seconds.
+The Police Turtle receives the real Pose of the Robber Turtle every 5 seconds.
 """
 
 import rospy
@@ -18,15 +19,27 @@ from flyt_task import utils
 
 class RobberTurtle:
     """
-    TurtleSim turtle turtle that implements a PD - Controller on the turtle's forward and strafe velocities.
-    Generate waypoints for a circular trajectory (at every 1 degree) with variable radius and speed.
+    A controller for TurtleSim turtles using PD - control with velocity profiling.
 
-    Publishes the real Pose of the turtle as well as the real Pose with a random Gaussian noise, every 5 seconds.
+    This class implements a control system that guides a turtle to a goal position
+    using a PD - Controller. The resulting velocity vector is decomposed
+    into the turtle's local frame for forward and strafe control.
+
+    A trajectory is generated as a list of timed waypoints (x, y, t), where
+    the Turtle is expected to reach waypoint (x, y) at time t relative to the
+    time it starts the circular trajectory.
+
+    Ensures that the circular trajectory of a given radius is completed
+    in a given time.
+
+    This class also uses throttling to publish the actual and noisy Pose data
+    of the Turtle every 5 seconds.
     """
+
     def __init__(self, radius=3.5, time=15.0):
         """
         Args:
-            radius (float): Radius of the circular trajectory
+            radius (float): Radius of the circular trajectory (TurtleSim coordinate units)
             time (float): Time taken by the turtle to complete a circle (seconds)
         """
         rospy.init_node("turtle", anonymous=True)
@@ -59,10 +72,10 @@ class RobberTurtle:
         # Trajectory of the circular path (x, y, time)
         self.trajectory = utils.generate_circular_trajectory(self.time, self.radius)
 
-        """The turtle spawns at 0th waypoint at 0 time"""
-
         # Track start time of drawing
         self.start_time = None
+
+        """The turtle spawns at 0th waypoint at 0 time"""
 
         # Track next waypoint
         self.current_waypoint = 1
@@ -76,27 +89,30 @@ class RobberTurtle:
         self.current_pose = Pose()
         self.is_caught = False
 
-        # Setup publisher and subscriber for pose and command velocity
+        # Publisher for command velocity
         self.cmd_pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
+
+        # Subscriber for pose
         self.pose_sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
 
-        # Setup publishers for throttled pose
+        # Setup a publisher for real pose (throttled)
         self.throttled_pub = rospy.Publisher('rt_real_pose', Pose, queue_size=10)
         self.last_published_time = rospy.Time.now()
 
-        # Setup a publisher to publish noisy pose
+        # Setup a publisher for noisy pose (throttled)
         self.noisy_pub = rospy.Publisher('rt_noisy_pose', Pose, queue_size=10)
         self.noisy_pose = Pose()
-
-        # Track the current time
-        self.last_time = rospy.Time.now()
 
     def pose_callback(self, data):
         """
         Updates current pose from TurtleSim pose message.
-        Calls the controller function for the current pose.
+        Calls the controller function for the current pose
+        until RT is caught.
 
         Publishes the real Pose and the noisy Pose every 5 seconds.
+
+        Args:
+            data (Pose): incoming pose data from TurtleSim
         """
         self.current_pose = data
 
@@ -119,7 +135,9 @@ class RobberTurtle:
     
     def draw_circle(self):
         """
-        Uses the next waypoint as a goal and implements a PD - Controller to move to it.
+        Uses the next waypoint as a goal and implements a similar PD - Controller as before to move to it.
+        Once the waypoint is reached, it updates the goal to the next waypoint.
+
         If the turtle reaches a waypoint earlier than expected, it will wait till it is actually expected to be there.
         """
         # Calculate error
@@ -146,13 +164,15 @@ class RobberTurtle:
 
             # Reset start time upon completion of the circle
             if self.current_waypoint == 0:
+                rospy.loginfo(f"Circle completed in {time_elapsed:.2f} seconds!")
                 self.start_time = rospy.Time.now()
+
             else:
                 while (rospy.Time.now() - self.start_time).to_sec() <= time_expected:
                     # If the turtle is early to this waypoint, hold it still till the time it is actually expected to be there
                     self.cmd_pub.publish(cmd) # Hold turtle still
 
-            # Update waypoint
+            """Update waypoint and continue circular trajectory infinitely."""
             self.current_waypoint = (self.current_waypoint + 1) % 360
             self.goal.x = self.trajectory[self.current_waypoint][0]
             self.goal.y = self.trajectory[self.current_waypoint][1]
@@ -172,19 +192,22 @@ class RobberTurtle:
 
 class PoliceTurtle:
     """
-    TurtleSim turtle that implements a PD - Controller with an external
-    acceleration / deceleration profile, to chase the Robber Turtle.
+    Controller for the pursuing Police Turtle that chases the Robber Turtle.
 
-    Spawns at a random position and receives the Robber Turtle's pose every 5 seconds.
+    This class implements a PD-controlled pursuit behavior with velocity profiling
+    for smooth acceleration and deceleration. The Police Turtle spawns at a random
+    point in the TurtleSim frame and receives updates of the Robber's position only
+    every 5 seconds, simulating limited information pursuit.
     """
-    def __init__(self, robber_turtle):
+
+    def __init__(self, robber_turtle: RobberTurtle):
         """
         Args:
             robber_turtle (RobberTurtle): Reference to the Robber Turtle instance
         """
         self.robber = robber_turtle
 
-        """Use the TurtleSim Spawn service to spawn Police turtle at a random position."""
+        """Use the TurtleSim Spawn service to spawn Police Turtle at a random position."""
         self.spawn = rospy.ServiceProxy('spawn', Spawn)
         spawn_x = uniform(0.5, 10.5)
         spawn_y = uniform(0.5, 10.5)
@@ -210,8 +233,10 @@ class PoliceTurtle:
         # Track the last known pose of the Robber Turtle
         self.robber_pose = None
 
-        # Setup publisher and subscriber for pose and command velocity
+        # Publisher for command velocity
         self.cmd_pub = rospy.Publisher('turtle3/cmd_vel', Twist, queue_size=10)
+
+        # Subscriber for pose
         self.pose_sub = rospy.Subscriber('turtle3/pose', Pose, self.pose_callback)
 
         # Setup subscriber to get the Pose of the Robber Turtle every 5 seconds
@@ -224,22 +249,34 @@ class PoliceTurtle:
         # Scale limits to compensate for negligible dt values
         self.acceleration_limit *= 1000
         self.deceleration_limit *= 1000
-
-        # Track current linear velocity
-        self.current_linear_velocity = 0.0
         
         # Track the current time
         self.last_time = rospy.Time.now()
 
-    def robber_callback(self, data):
-        """Updates the last known position of the Robber Turtle (every 5 seconds)."""
+    def robber_callback(self, data: Pose):
+        """
+        Updates the last known position of the Robber Turtle (every 5 seconds).
+
+        Args:
+            data (Pose): incoming real pose of the Robber Turtle
+        """
         self.robber_pose = data
         rospy.loginfo("Robber Turtle pose recieved...")
 
-    def pose_callback(self, data):
-        """Updates current pose of the Police Turtle and checks if the Robber Turtle is caught."""
+    def pose_callback(self, data: Pose):
+        """
+        Updates current pose of the Police Turtle and checks if the Robber Turtle is caught.
+
+        Args:
+            data (Pose): incoming real pose of the Robber Turtle
+        """
         self.current_pose = data
-        self.current_linear_velocity = self.current_pose.linear_velocity
+
+        """
+        The chase starts only when the Police Turtle is informed
+        of the Robber Turtle's pose and ends when the Robber Turtle
+        is caught.
+        """
 
         if not self.robber.is_caught and self.robber_pose is not None:
             self.chase_robber()
@@ -248,6 +285,7 @@ class PoliceTurtle:
             distance = utils.calculate_distance(self.current_pose, self.robber.current_pose)
             
             """Stop both turtles when the Robber Turtle is caught (tolerance = radius * 0.1)"""
+
             if distance <= 0.4:
                 self.stop()
                 self.robber.stop()
@@ -255,8 +293,13 @@ class PoliceTurtle:
     
     def chase_robber(self):
         """
-        Uses PD - control to chase the Robber Turtle based on its last known position.
-        Applies acceleration and deceleration limits.
+        Execute the pursuit control loop with velocity profiling.
+
+        This method:
+        1. Calculates control errors based on last known target position
+        2. Applies PD - control with velocity profiling
+        3. Enforces acceleration and deceleration limits
+        4. Transforms and publishes velocity commands
         """
         # Calculate time delta
         current_time = rospy.Time.now()
@@ -273,7 +316,6 @@ class PoliceTurtle:
         # Handle special case for first callback
         if self.prev_distance_error is None:
             self.prev_distance_error = distance_error
-            self.current_linear_velocity = 0.0
             self.last_time = rospy.Time.now()
             return # Skip this control cycle
 
@@ -284,15 +326,13 @@ class PoliceTurtle:
         target_velocity = (self.Kp * distance_error + self.Kd * distance_error_derivative)
 
         # Apply limits to change in velocity
-        velocity_delta_required = target_velocity - self.current_linear_velocity
-        if velocity_delta_required > 0: # acceleartion
-            max_delta = self.acceleration_limit * dt
-            velocity_delta_achieved = min(velocity_delta_required, max_delta)
-        else: # deceleration
-            max_delta = -self.deceleration_limit * dt
-            velocity_delta_achieved = max(velocity_delta_required, max_delta)
+        velocity_delta_achieved = utils.limit_velocity_delta(target_velocity,
+                                                             self.current_pose.linear_velocity,
+                                                             self.acceleration_limit,
+                                                             self.deceleration_limit,
+                                                             dt)
 
-        velocity_magnitude = self.current_linear_velocity + velocity_delta_achieved
+        velocity_magnitude = self.current_pose.linear_velocity + velocity_delta_achieved
         velocity_direction = angle_error
 
         # Rotate the global velocity vector to the Turtle's local frame
@@ -303,7 +343,7 @@ class PoliceTurtle:
 
     def stop(self):
         """
-        Stops the Police Turtle by publishing zero velocity
+        Stops the Police Turtle by publishing zero velocity.
         Sets the is_caught flag of the Robber Turtle.
         """
         self.robber.is_caught = True

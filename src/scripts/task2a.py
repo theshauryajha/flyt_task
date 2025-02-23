@@ -12,11 +12,14 @@ from flyt_task import utils
 
 class Turtle:
     """
-    TurtleSim turtle that implements an external acceleration and deceleartion profile.
-    This profile is implemented by limiting how aggressively the turtle can change its velocity.
+    A controller for TurtleSim turtles using PD - control with velocity profiling.
 
-    Implements a PD - Controller to move to the goal using forward and strafe velocities.
+    This class implements a control system that guides a turtle to a goal position
+    using a PD - Controller. The controller includes acceleration and deceleration
+    profiles to ensure smooth motion. The resulting velocity vector is decomposed
+    into the turtle's local frame for forward and strafe control.
     """
+
     def __init__(self):
         rospy.init_node("turtle", anonymous=True)
 
@@ -32,11 +35,16 @@ class Turtle:
         self.teleport = rospy.ServiceProxy('turtle1/teleport_absolute', TeleportAbsolute)
 
         # PD - Control parameters
-        self.Kp = 1.25
-        self.Kd = 2.3
+        self.Kp = 0.8
+        self.Kd = 0.02
 
         # Error term
-        self.prev_distance_error = 0.0
+        self.prev_distance_error = None
+
+        """
+        Initializing the tracking variable for the previous distance error to zero causes the
+        first published velocity to be unnaturally large.
+        """
 
         # Goal pose
         self.goal = Pose()
@@ -46,24 +54,29 @@ class Turtle:
         # Current pose data
         self.current_pose = Pose()
 
-        # Setup publisher and subscriber for pose and command velocity
+        # Publisher for command velocity
         self.cmd_pub = rospy.Publisher('turtle2/cmd_vel', Twist, queue_size=10)
+
+        # Subscriber for pose
         self.pose_sub = rospy.Subscriber('turtle2/pose', Pose, self.pose_callback)
 
         # Publish goal for rqt_multiplot
         self.goal_pub = rospy.Publisher('goal_pose', Pose, queue_size=10)
 
         # Define maximum acceleration and deceleration
-        self.max_acceleration = 1.0
-        self.max_deceleration = 1.0
+        self.max_acceleration = 8.0
+        self.max_deceleration = 2.0
 
         # Track the current time
         self.last_time = rospy.Time.now()
 
-    def pose_callback(self, data):
+    def pose_callback(self, data: Pose):
         """
         Updates current pose from TurtleSim pose message.
         Calls the controller function for the current pose.
+
+        Args:
+            data (Pose): incoming pose data from TurtleSim
         """
         self.current_pose = data
         self.move_to_goal()
@@ -78,14 +91,19 @@ class Turtle:
             # Set pen color -> red
             self.set_pen(255, 0, 0, 3, 0)
 
+            marker_points = [
+                (6, 6, pi/4),
+                (5, 5, pi/4),
+                (5.5, 5.5, pi/4),
+                (6, 5, -pi/4),
+                (5, 6, -pi/4),
+                (5.5, 5.5, -pi/4)
+            ]
+
             # Draw the marker
-            self.teleport(6, 6, pi/4)
-            self.teleport(5, 5, pi/4)
-            self.teleport(5.5, 5.5, pi/4)
-            self.teleport(6, 5, -pi/4)
-            self.teleport(5, 6, -pi/4)
-            self.teleport(5.5, 5.5, -pi/4)
-            rospy.sleep(0.5)
+            for x, y, theta in marker_points:
+                self.teleport(x, y, theta)
+                rospy.sleep(0.1)
 
             # Kill the turtle after marking the goal
             rospy.loginfo("Goal marked; killing default turtle...")
@@ -109,18 +127,22 @@ class Turtle:
             self.spawn(x, y, theta, "turtle2")
             rospy.loginfo(f"Spawned turtle at x:{x:.2f}, y:{y:.2f}, theta:{theta:.2f}")
             rospy.sleep(0.5)
+
         except rospy.ServiceException as e:
             rospy.logerr(f"Failed to spawn turtle: {e}")
     
     def move_to_goal(self):
         """
-        The target velocity vector is calculated using distance and heading errors.
-        The direction of this vector is equivalent to the heading error.
-        The magnitude of this vector is calculated as the target velocity obtained by the PD - Controller
-        and then constrained by the maximum acceleration / deceleration limits.
-
-        The velocity vector is rotated into the local frame of the turtle and published
-        as forward and strafe velocities.
+        Execute the control loop to move the turtle toward the goal.
+        
+        Implements a PD controller with velocity profiling:
+        1. Calculates target velocity using PD control
+        2. Applies acceleration/deceleration limits
+        3. Converts global velocity to local frame components
+        4. Publishes velocity commands
+        
+        The controller ensures smooth motion by limiting velocity changes
+        according to the maximum acceleration and deceleration parameters.
         """
         # Calculate time delta
         current_time = rospy.Time.now()
@@ -134,6 +156,12 @@ class Turtle:
         distance_error = utils.calculate_distance(self.goal, self.current_pose)
         angle_error = utils.calculate_angle(self.goal, self.current_pose)
 
+        # Handle special case for first callback
+        if self.prev_distance_error is None:
+            self.prev_distance_error = distance_error
+            self.last_time = rospy.Time.now()
+            return # Skip this control cycle
+
         # Set derivative term
         distance_error_derivative = distance_error - self.prev_distance_error
 
@@ -141,15 +169,13 @@ class Turtle:
         target_velocity = (self.Kp * distance_error + self.Kd * distance_error_derivative)
 
         # Apply limits to change in velocity
-        velocity_delta = target_velocity - self.current_pose.linear_velocity
-        if velocity_delta > 0: # acceleartion
-            max_delta = self.max_acceleration * dt
-            velocity_delta = min(velocity_delta, max_delta)
-        else: # deceleration
-            max_delta = self.max_deceleration * dt
-            velocity_delta = max(velocity_delta, -max_delta)
+        velocity_delta_achieved = utils.limit_velocity_delta(target_velocity,
+                                                             self.current_pose.linear_velocity,
+                                                             self.max_acceleration,
+                                                             self.max_deceleration,
+                                                             dt)
 
-        velocity_magnitude = self.current_pose.linear_velocity + velocity_delta
+        velocity_magnitude = self.current_pose.linear_velocity + velocity_delta_achieved
         velocity_direction = angle_error
 
         # Rotate the global velocity vector to the Turtle's local frame
@@ -159,7 +185,13 @@ class Turtle:
         self.cmd_pub.publish(cmd)
         rospy.loginfo(f"Current pose data = x:{self.current_pose.x:.2f}, y:{self.current_pose.y:.2f}, theta:{self.current_pose.theta:.2f}")
 
+        # Publish goal for plotting
         self.goal_pub.publish(self.goal)
+
+        if distance_error < 0.01:
+            cmd = Twist()
+            self.cmd_pub.publish(cmd)
+            rospy.loginfo_once("Goal Reached!")
 
 
 if __name__ == "__main__":
