@@ -17,6 +17,6 @@ rosrun turtlesim turtlesim_node
 
 - In a different terminal, run the desired Python script (task X)
 ```bash
-rosrun flyt_task taskx.py
+rosrun flyt_task <taskx.py>
 ```
-- Replace taskx.py with the name of the script.
+- Replace <taskx.py> with the name of the script.
