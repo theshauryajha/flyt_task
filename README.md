@@ -19,4 +19,4 @@ rosrun turtlesim turtlesim_node
 ```bash
 rosrun flyt_task taskx.py
 ```
-- Replace <taskx.py> with the name of the script.
+- Replace taskx.py with the name of the script.
